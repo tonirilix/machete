@@ -1,0 +1,133 @@
+import type { DesktopBridge, Snapshot } from '../../../shared/bridge'
+import {
+  applyCommand,
+  backupSchema,
+  createLibrary,
+  DOUBLE_SHIFT_SHORTCUT,
+  exportBackup,
+  librarySchema,
+  restoreBackup,
+  type Library,
+} from '../../../shared/library'
+
+// The browser preview uses its own collection. The desktop app always uses IPC.
+function createBrowserBridge(): DesktopBridge {
+  const key = 'cliptoboards.browser-preview.v1'
+  let library: Library | undefined
+
+  function current(): Library {
+    if (!library) {
+      const saved = localStorage.getItem(key)
+      library = saved ? librarySchema.parse(JSON.parse(saved)) : createLibrary()
+    }
+    return library
+  }
+
+  function snapshot(): Snapshot {
+    return { library: structuredClone(current()), shortcutError: null }
+  }
+
+  function save(next: Library): Snapshot {
+    localStorage.setItem(key, JSON.stringify(next))
+    library = next
+    return snapshot()
+  }
+
+  return {
+    getState: async () => snapshot(),
+    execute: async (command) => save(applyCommand(current(), command)),
+    capture: async (fromClipboard) => {
+      if (!fromClipboard && current().draft) return snapshot()
+      let text = ''
+      if (fromClipboard) {
+        try {
+          text = await navigator.clipboard.readText()
+        } catch {
+          throw new Error(
+            'Clipboard access is unavailable here. Create a new clip and paste your text.',
+          )
+        }
+      }
+      return save(
+        applyCommand(current(), {
+          type: fromClipboard && text.length ? 'append-capture' : 'begin-capture',
+          text,
+        }),
+      )
+    },
+    copy: async (text) => navigator.clipboard.writeText(text),
+    selectionAccess: async () => ({ supported: false, granted: false }),
+    hide: async () => {},
+    exportCollection: async () => {
+      const blob = new Blob([JSON.stringify(exportBackup(current()), null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `cliptoboards-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      return true
+    },
+    importCollection: () =>
+      new Promise((resolve, reject) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = '.json,application/json'
+        input.addEventListener('cancel', () => resolve(null), { once: true })
+        input.addEventListener(
+          'change',
+          async () => {
+            try {
+              const file = input.files?.[0]
+              if (!file) return resolve(null)
+              if (file.size > 64 * 1024 * 1024)
+                throw new Error('This collection file is too large.')
+              const backup = backupSchema.safeParse(JSON.parse(await file.text()))
+              if (!backup.success)
+                throw new Error('This is not a supported Cliptoboards collection.')
+              if (
+                !confirm(
+                  'Replace your current boards, clips, Trash, and draft with this collection?',
+                )
+              ) {
+                return resolve(null)
+              }
+              resolve(save(restoreBackup(current(), backup.data)))
+            } catch (error) {
+              reject(error)
+            }
+          },
+          { once: true },
+        )
+        input.click()
+      }),
+    onOpen: () => () => {},
+  }
+}
+
+function getBridge(): DesktopBridge {
+  if (window.cliptoboards) return window.cliptoboards
+  if (import.meta.env.DEV) return createBrowserBridge()
+  throw new Error('The desktop connection is unavailable. Please restart Cliptoboards.')
+}
+
+export const bridge = getBridge()
+export const isDesktop = Boolean(window.cliptoboards)
+
+export function errorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}
+
+export function shortcutLabel(shortcut: string) {
+  if (shortcut === DOUBLE_SHIFT_SHORTCUT) return '⇧ ⇧'
+  return shortcut
+    .replace(/CommandOrControl|Command|Cmd/gi, '⌘')
+    .replace(/Control|Ctrl/gi, '⌃')
+    .replace(/Shift/gi, '⇧')
+    .replace(/Alt|Option/gi, '⌥')
+    .replace(/Space/gi, 'Space')
+    .replaceAll('+', '')
+}

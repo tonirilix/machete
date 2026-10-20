@@ -6,9 +6,11 @@
   "type": "module",
   "scripts": {
     "postinstall": "install-electron",
+    "dev:web": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build": "vite build"
   },
   "engines": {
     "node": ">=22.12.0"
