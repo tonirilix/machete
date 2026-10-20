@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -101,7 +102,13 @@ const capture = () =>
   return true;
 })()`)
 async function openFixture(mode, text) {
-  source?.kill()
+  if (source && source.exitCode === null && source.signalCode === null) {
+    // AppKit can reactivate the previous app as a fixture exits. Finish that
+    // handoff before asking the next fixture to take focus.
+    const exited = once(source, 'exit')
+    source.kill()
+    await exited
+  }
   source = spawn(fixture, [mode, text], { env: environment, stdio: ['ignore', 'pipe', 'inherit'] })
   await new Promise((done, reject) => {
     const timer = setTimeout(() => reject(new Error('Fixture did not become ready')), 8000)
@@ -338,7 +345,14 @@ try {
   process.exitCode = 1
 } finally {
   source?.kill()
-  inspector?.close()
+  if (inspector) {
+    // All capture and persistence checks have finished. Stop the disposable
+    // inspected process before asking the native observer to wait for its exit.
+    await inspector
+      .evaluate(`(() => { setTimeout(() => ${electron}.app.exit(0), 100); return true })()`)
+      .catch(() => {})
+    inspector.close()
+  }
   if (helperReady && launched) {
     await quitApp()
     run('/usr/bin/open', ['--env', 'MACHETE_DATA_DIR=', bundle])

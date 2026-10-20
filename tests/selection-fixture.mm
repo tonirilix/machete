@@ -50,9 +50,11 @@ int main(int argc, const char *argv[]) {
     }
     [window makeKeyAndOrderFront:nil];
     [app activateIgnoringOtherApps:YES];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
+      if (!app.isActive || !window.isKeyWindow) return;
+      [timer invalidate];
       printf("READY\n"); fflush(stdout);
-    });
+    }];
     [app run];
   }
 }
