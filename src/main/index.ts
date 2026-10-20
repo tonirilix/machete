@@ -18,15 +18,10 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { channels, type OpenRequest, type Snapshot } from '../shared/bridge'
-import {
-  backupSchema,
-  commandSchema,
-  DOUBLE_SHIFT_SHORTCUT,
-  exportBackup,
-  MAX_CLIP_LENGTH,
-} from '../shared/library'
+import { backupSchema, commandSchema, exportBackup, MAX_CLIP_LENGTH } from '../shared/library'
 import { LibraryStore } from './store'
 import { CaptureController } from './capture'
+import { ShortcutController } from './shortcuts'
 import {
   readSelection,
   requestSelectionAccess,
@@ -53,15 +48,15 @@ let window: BrowserWindow
 let tray: Tray
 let store: LibraryStore
 let quitting = false
-let shortcutError: string | null = null
 let startup: Promise<void>
+let shortcuts: ShortcutController
 let captures: CaptureController
 
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) app.quit()
 
 function snapshot(): Snapshot {
-  return { library: store.getState(), shortcutError }
+  return { library: store.getState(), shortcutError: shortcuts.shortcutError }
 }
 
 function report(error: unknown) {
@@ -91,41 +86,9 @@ export function captureSelectionAndShow() {
   return captures.request('selection')
 }
 
-function registerShortcut(accelerator: string): boolean {
-  try {
-    if (accelerator === DOUBLE_SHIFT_SHORTCUT) {
-      return startDoubleShift(() => {
-        if (!quitting && store.getState().settings.shortcut === DOUBLE_SHIFT_SHORTCUT) {
-          void captureSelectionAndShow()
-        }
-      })
-    }
-    return globalShortcut.register(accelerator, () => void captureSelectionAndShow())
-  } catch {
-    return false
-  }
-}
-
-function isShortcutRegistered(shortcut: string) {
-  return shortcut === DOUBLE_SHIFT_SHORTCUT
-    ? isDoubleShiftRegistered()
-    : globalShortcut.isRegistered(shortcut)
-}
-
-function unregisterShortcut(shortcut: string) {
-  if (shortcut === DOUBLE_SHIFT_SHORTCUT) stopDoubleShift()
-  else globalShortcut.unregister(shortcut)
-}
-
-function refreshSelectionAccess() {
+async function refreshSelectionAccess() {
   const access = selectionAccess()
-  if (
-    access.granted &&
-    store.getState().settings.shortcut === DOUBLE_SHIFT_SHORTCUT &&
-    !isDoubleShiftRegistered()
-  ) {
-    if (registerShortcut(DOUBLE_SHIFT_SHORTCUT)) shortcutError = null
-  }
+  if (access.granted) await shortcuts.recover()
   return access
 }
 
@@ -162,25 +125,7 @@ function installHandlers() {
       await store.execute(command)
       return snapshot()
     }
-    const previous = store.getState().settings.shortcut
-    const next = command.shortcut
-    if (next === previous && isShortcutRegistered(previous)) return snapshot()
-    if (!registerShortcut(next)) {
-      if (next === DOUBLE_SHIFT_SHORTCUT) {
-        throw new Error(
-          'Double Shift requires macOS Accessibility access. Enable selection capture in Settings first.',
-        )
-      }
-      throw new Error('That shortcut is unavailable. Try another key combination.')
-    }
-    try {
-      await store.execute(command)
-    } catch (error) {
-      if (next !== previous) unregisterShortcut(next)
-      throw error
-    }
-    if (next !== previous) unregisterShortcut(previous)
-    shortcutError = null
+    await shortcuts.change(command.shortcut)
     return snapshot()
   })
   handle(channels.copy, async (payload) => {
@@ -254,6 +199,18 @@ async function start() {
     },
     { ready: () => startup, show: present },
   )
+  shortcuts = new ShortcutController(
+    store,
+    {
+      electron: globalShortcut,
+      doubleShift: {
+        register: (_shortcut, callback) => startDoubleShift(callback),
+        unregister: () => stopDoubleShift(),
+        isRegistered: () => isDoubleShiftRegistered(),
+      },
+    },
+    () => void captureSelectionAndShow(),
+  )
   const rendererRoot = resolve(directory, '../renderer')
   protocol.handle('machete', (request) => {
     const url = new URL(request.url)
@@ -316,13 +273,7 @@ async function start() {
       { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'close' }] },
     ]),
   )
-  const accelerator = store.getState().settings.shortcut
-  if (!registerShortcut(accelerator)) {
-    shortcutError =
-      accelerator === DOUBLE_SHIFT_SHORTCUT
-        ? 'Enable Accessibility in Settings to use Double Shift.'
-        : 'Your capture shortcut is unavailable. Choose a different one in Settings.'
-  }
+  await shortcuts.start()
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
   await window.loadURL(developmentUrl || 'machete://app/index.html')
 }
@@ -344,16 +295,16 @@ if (hasLock) {
     if (quitting || !store) return
     event.preventDefault()
     quitting = true
-    stopDoubleShift()
-    void captures.stop().finally(() => app.quit())
+    void Promise.all([shortcuts?.stop(), captures?.stop()]).finally(() => app.quit())
   })
-  app.on('will-quit', () => globalShortcut.unregisterAll())
+  app.on('will-quit', () => void shortcuts?.stop())
   startup = start().catch((error) => {
     // Closing the app can reject its initial page load. Shutdown is already
     // underway; a modal startup error here would prevent it from finishing.
     if (quitting) return
     report(error)
     quitting = true
+    void shortcuts?.stop()
     app.quit()
   })
   if (!process.argv.includes('--hidden')) void show('browse')
