@@ -11,10 +11,12 @@ import {
 } from '../../../shared/library'
 
 // The browser preview uses its own collection. The desktop app always uses IPC.
-function createBrowserBridge(): DesktopBridge {
+export function createBrowserBridge(): DesktopBridge {
   // Keep collections saved by the browser preview before the rename.
   const key = 'cliptoboards.browser-preview.v1'
   let library: Library | undefined
+  let revision = 0
+  let draftWriteId: string | null = null
 
   function current(): Library {
     if (!library) {
@@ -25,17 +27,31 @@ function createBrowserBridge(): DesktopBridge {
   }
 
   function snapshot(): Snapshot {
-    return { library: structuredClone(current()), shortcutError: null }
+    return { library: structuredClone(current()), shortcutError: null, revision, draftWriteId }
   }
 
   function save(next: Library): Snapshot {
     localStorage.setItem(key, JSON.stringify(next))
     library = next
+    revision++
     return snapshot()
   }
 
   return {
     getState: async () => snapshot(),
+    editDraft: async (request) => {
+      if (request.revision !== revision) return { accepted: false, snapshot: snapshot() }
+      const command =
+        request.action === 'discard'
+          ? { type: 'discard-draft' as const }
+          : request.action === 'save'
+            ? { type: 'save-draft' as const, ...request.draft! }
+            : { type: 'update-draft' as const, ...request.draft! }
+      const next = applyCommand(current(), command)
+      const result = save(next)
+      draftWriteId = request.id
+      return { accepted: true, snapshot: { ...result, draftWriteId } }
+    },
     execute: async (command) => save(applyCommand(current(), command)),
     capture: async (fromClipboard) => {
       if (!fromClipboard && current().draft) return snapshot()
@@ -103,6 +119,7 @@ function createBrowserBridge(): DesktopBridge {
         )
         input.click()
       }),
+    onBeforeQuit: () => () => {},
     onOpen: () => () => {},
   }
 }

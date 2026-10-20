@@ -18,8 +18,15 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { channels, type OpenRequest, type Snapshot } from '../shared/bridge'
-import { backupSchema, commandSchema, exportBackup, MAX_CLIP_LENGTH } from '../shared/library'
+import {
+  backupSchema,
+  commandSchema,
+  exportBackup,
+  MAX_CLIP_LENGTH,
+  draftSchema,
+} from '../shared/library'
 import { LibraryStore } from './store'
+import { DraftQuitDrain } from './draft-quit-drain'
 import { CaptureController } from './capture'
 import { ShortcutController } from './shortcuts'
 import {
@@ -48,6 +55,10 @@ let window: BrowserWindow
 let tray: Tray
 let store: LibraryStore
 let quitting = false
+let preparingQuit = false
+const draftQuit = new DraftQuitDrain((request) =>
+  window.webContents.send(channels.draftDrainRequested, request),
+)
 let startup: Promise<void>
 let shortcuts: ShortcutController
 let captures: CaptureController
@@ -56,7 +67,12 @@ const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) app.quit()
 
 function snapshot(): Snapshot {
-  return { library: store.getState(), shortcutError: shortcuts.shortcutError }
+  return {
+    library: store.getState(),
+    revision: store.getRevision(),
+    draftWriteId: store.getDraftWriteId(),
+    shortcutError: shortcuts.shortcutError,
+  }
 }
 
 function report(error: unknown) {
@@ -83,6 +99,7 @@ function present(mode: OpenRequest['mode'], notice?: string) {
 }
 
 export function captureSelectionAndShow() {
+  if (preparingQuit || quitting) return Promise.resolve()
   return captures.request('selection')
 }
 
@@ -107,11 +124,48 @@ function handle(channel: string, handler: (payload: unknown) => unknown) {
 }
 
 function installHandlers() {
+  handle(channels.draftDrainRegistration, (payload) => {
+    const request = z
+      .object({ registrationId: z.string().uuid(), active: z.boolean() })
+      .parse(payload)
+    draftQuit.register(request.registrationId, request.active)
+  })
+  handle(channels.draftDrainCompleted, (payload) => {
+    const request = z
+      .object({
+        id: z.string().uuid(),
+        registrationId: z.string().uuid(),
+        error: z.string().max(10_000).optional(),
+      })
+      .parse(payload)
+    draftQuit.complete(request, request.error)
+  })
   handle(channels.state, async () => {
     await store.whenIdle()
     return snapshot()
   })
+  handle(channels.editDraft, async (payload) => {
+    const request = z
+      .object({
+        id: z.string().min(1).max(100),
+        revision: z.number().int().nonnegative(),
+        action: z.enum(['update', 'save', 'discard']),
+        draft: draftSchema.optional(),
+      })
+      .parse(payload)
+    const result = await store.editDraft(request)
+    return {
+      accepted: result.accepted,
+      snapshot: {
+        library: result.library,
+        revision: result.revision,
+        draftWriteId: result.draftWriteId,
+        shortcutError: shortcuts.shortcutError,
+      },
+    }
+  })
   handle(channels.capture, async (payload) => {
+    if (preparingQuit || quitting) throw new Error('Machete is preparing to quit.')
     await captures.request(z.boolean().parse(payload) ? 'clipboard' : 'empty', false)
     return snapshot()
   })
@@ -258,7 +312,12 @@ async function start() {
   tray.on('click', () => void show('browse'))
   const trayMenu = Menu.buildFromTemplate([
     { label: 'Open Machete', click: () => void show('browse') },
-    { label: 'Capture clipboard', click: () => void captures.request('clipboard').catch(report) },
+    {
+      label: 'Capture clipboard',
+      click: () => {
+        if (!preparingQuit && !quitting) void captures.request('clipboard').catch(report)
+      },
+    },
     { type: 'separator' },
     { label: 'Quit Machete', role: 'quit' },
   ])
@@ -294,8 +353,25 @@ if (hasLock) {
   app.on('before-quit', (event) => {
     if (quitting || !store) return
     event.preventDefault()
-    quitting = true
-    void Promise.all([shortcuts?.stop(), captures?.stop()]).finally(() => app.quit())
+    if (preparingQuit) return
+    preparingQuit = true
+    void (async () => {
+      try {
+        await draftQuit.drain()
+      } catch (error) {
+        preparingQuit = false
+        if (!window.isDestroyed()) {
+          window.webContents.send(channels.draftDrainCancelled)
+          window.show()
+        }
+        report(error)
+        return
+      }
+      quitting = true
+      await Promise.all([shortcuts?.stop(), captures?.stop()])
+      await store.whenIdle()
+      app.quit()
+    })().catch(report)
   })
   app.on('will-quit', () => void shortcuts?.stop())
   startup = start().catch((error) => {

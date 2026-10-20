@@ -46,7 +46,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ClipCard } from '@/components/clip-card'
-import { ClipEditor } from '@/components/clip-editor'
+import { DraftEditing } from '@/lib/draft-editing'
+import { ClipEditor, DraftEditor } from '@/components/clip-editor'
 import { LibrarySidebar } from '@/components/library-sidebar'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { bridge, errorMessage, isDesktop, shortcutLabel } from '@/lib/bridge'
@@ -64,7 +65,19 @@ export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>({ type: 'browse' })
-  const [captureRevision, setCaptureRevision] = useState(0)
+  const [draftEditing] = useState(
+    () =>
+      new DraftEditing(bridge, (next) => {
+        setSnapshot((current) => (!current || next.revision >= current.revision ? next : current))
+      }),
+  )
+  const acceptSnapshot = useCallback(
+    (next: Snapshot) => {
+      draftEditing.receive(next)
+      setSnapshot((current) => (!current || next.revision >= current.revision ? next : current))
+    },
+    [draftEditing],
+  )
   const [active, setActive] = useState('all')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string[]>([])
@@ -76,37 +89,48 @@ export function App() {
   const [confirmBusy, setConfirmBusy] = useState(false)
   const search = useRef<HTMLInputElement>(null)
 
+  useEffect(
+    () =>
+      bridge.onBeforeQuit(
+        () => draftEditing.prepareToQuit(),
+        () => draftEditing.cancelQuit(),
+      ),
+    [draftEditing],
+  )
+
   const load = useCallback(async () => {
     try {
-      setSnapshot(await bridge.getState())
+      acceptSnapshot(await bridge.getState())
       setLoadError(null)
     } catch (error) {
       setLoadError(errorMessage(error))
     }
-  }, [])
+  }, [acceptSnapshot])
 
   useEffect(() => {
     void load()
     return bridge.onOpen((request) => {
-      setSnapshot(request.snapshot)
+      acceptSnapshot(request.snapshot)
       setMode({ type: request.mode === 'capture' ? 'capture' : 'browse' })
-      if (request.mode === 'capture') setCaptureRevision((revision) => revision + 1)
       setSettings(request.mode === 'settings')
       if (request.notice) toast.error(request.notice, { id: 'capture-notice' })
       setSelected([])
     })
-  }, [load])
+  }, [load, acceptSnapshot])
 
-  const run = useCallback(async (command: Command) => {
-    try {
-      const result = await bridge.execute(command)
-      setSnapshot(result)
-      return result
-    } catch (error) {
-      toast.error(errorMessage(error), { id: 'operation-error' })
-      return null
-    }
-  }, [])
+  const run = useCallback(
+    async (command: Command) => {
+      try {
+        const result = await bridge.execute(command)
+        acceptSnapshot(result)
+        return result
+      } catch (error) {
+        toast.error(errorMessage(error), { id: 'operation-error' })
+        return null
+      }
+    },
+    [acceptSnapshot],
+  )
 
   const library = snapshot?.library
   const clips = useMemo(
@@ -125,8 +149,7 @@ export function App() {
 
   async function capture(fromClipboard = false) {
     try {
-      setSnapshot(await bridge.capture(fromClipboard))
-      setCaptureRevision((revision) => revision + 1)
+      acceptSnapshot(await bridge.capture(fromClipboard))
       setMode({ type: 'capture' })
       setSelected([])
     } catch (error) {
@@ -247,11 +270,8 @@ export function App() {
   })
 
   async function saveClip(draft: Draft) {
-    const result = await run(
-      mode.type === 'edit'
-        ? { type: 'edit-clip', id: mode.clipId, ...draft }
-        : { type: 'save-draft', ...draft },
-    )
+    if (mode.type !== 'edit') return
+    const result = await run({ type: 'edit-clip', id: mode.clipId, ...draft })
     if (result) {
       navigate(draft.boardId)
       toast.success(mode.type === 'edit' ? 'Clip updated' : 'A good little thing, saved.')
@@ -294,12 +314,7 @@ export function App() {
     active === 'all' ? 'All clips' : active === 'trash' ? 'Trash' : (currentBoard?.name ?? 'Inbox')
   const editingClip =
     mode.type === 'edit' ? state.clips.find((clip) => clip.id === mode.clipId) : null
-  const editor =
-    mode.type === 'capture'
-      ? state.draft
-      : editingClip
-        ? { text: editingClip.text, boardId: editingClip.boardId }
-        : null
+  const editor = editingClip ? { text: editingClip.text, boardId: editingClip.boardId } : null
   const isTrashed = active === 'trash'
 
   return (
@@ -350,21 +365,27 @@ export function App() {
           onSettings={() => setSettings(true)}
         />
         <main className="flex min-w-0 flex-1 flex-col">
-          {editor && mode.type !== 'browse' ? (
+          {mode.type === 'capture' ? (
+            <DraftEditor
+              editing={draftEditing}
+              boards={state.boards}
+              onBack={() => setMode({ type: 'browse' })}
+              onSaved={(draft) => {
+                navigate(draft.boardId)
+                toast.success('A good little thing, saved.')
+              }}
+              onDiscarded={() => setMode({ type: 'browse' })}
+            />
+          ) : editor && mode.type === 'edit' ? (
             <ClipEditor
-              key={mode.type === 'edit' ? mode.clipId : `capture:${captureRevision}`}
+              key={mode.clipId}
               initial={editor}
               boards={state.boards}
-              editing={mode.type === 'edit'}
-              onChange={(draft) => {
-                if (mode.type === 'capture') void run({ type: 'update-draft', ...draft })
-              }}
+              editing
+              onChange={() => {}}
               onSave={saveClip}
               onBack={() => setMode({ type: 'browse' })}
-              onDiscard={async () => {
-                if (mode.type === 'edit' || (await run({ type: 'discard-draft' })))
-                  setMode({ type: 'browse' })
-              }}
+              onDiscard={async () => setMode({ type: 'browse' })}
             />
           ) : (
             <>

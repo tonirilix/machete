@@ -1,3 +1,4 @@
+import type { DraftEdit } from '../shared/bridge'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -29,6 +30,8 @@ export async function writeCollection(path: string, library: Library): Promise<v
 }
 
 export class LibraryStore {
+  private revision = 0
+  private draftWriteId: string | null = null
   private queue: Promise<unknown> = Promise.resolve()
 
   private constructor(
@@ -63,6 +66,51 @@ export class LibraryStore {
     return structuredClone(this.library)
   }
 
+  getDraftWriteId(): string | null {
+    return this.draftWriteId
+  }
+
+  getRevision(): number {
+    return this.revision
+  }
+
+  editDraft(request: DraftEdit): Promise<{
+    library: Library
+    revision: number
+    accepted: boolean
+    draftWriteId: string | null
+  }> {
+    const operation = this.queue.then(async () => {
+      if (request.revision !== this.revision) {
+        return {
+          library: this.getState(),
+          revision: this.revision,
+          accepted: false,
+          draftWriteId: this.draftWriteId,
+        }
+      }
+      const command: Command =
+        request.action === 'discard'
+          ? { type: 'discard-draft' }
+          : request.action === 'save'
+            ? { type: 'save-draft', ...request.draft! }
+            : { type: 'update-draft', ...request.draft! }
+      const next = applyCommand(this.library, command)
+      await this.persist(next)
+      this.library = next
+      this.revision++
+      this.draftWriteId = request.id
+      return {
+        library: this.getState(),
+        revision: this.revision,
+        accepted: true,
+        draftWriteId: this.draftWriteId,
+      }
+    })
+    this.queue = operation.catch(() => {})
+    return operation
+  }
+
   execute(command: Command): Promise<Library> {
     return this.change((current) => applyCommand(current, command))
   }
@@ -80,6 +128,7 @@ export class LibraryStore {
       const next = transform(this.library)
       await this.persist(next)
       this.library = next
+      this.revision++
       return this.getState()
     })
     this.queue = operation.catch(() => {})
