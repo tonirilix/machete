@@ -77,24 +77,3 @@ export function stopDoubleShift() {
 export function isDoubleShiftRegistered() {
   return doubleShiftActive
 }
-
-export function selectionNotice(status: SelectionResult['status']): string {
-  switch (status) {
-    case 'no-selection':
-      return 'No selected text found. Select text in another app and try again, or use Capture clipboard.'
-    case 'source-changed':
-      return 'The active app changed during capture. Select your text and try again.'
-    case 'too-large':
-      return 'The selected text is too large to capture.'
-    case 'keys-held':
-      return 'Release the shortcut keys, then try capturing again.'
-    case 'clipboard-unavailable':
-      return 'The clipboard could not be preserved safely. Copy the selection yourself and use Capture clipboard.'
-    case 'clipboard-busy':
-      return 'The clipboard changed during capture. Please try again.'
-    case 'restore-failed':
-      return 'The previous clipboard could not be restored after Copy. Your draft is unchanged.'
-    default:
-      return 'Could not read the selected text. Copy it yourself and use Capture clipboard.'
-  }
-}

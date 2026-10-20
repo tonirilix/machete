@@ -26,11 +26,11 @@ import {
   MAX_CLIP_LENGTH,
 } from '../shared/library'
 import { LibraryStore } from './store'
+import { CaptureController } from './capture'
 import {
   readSelection,
   requestSelectionAccess,
   selectionAccess,
-  selectionNotice,
   startDoubleShift,
   stopDoubleShift,
   isDoubleShiftRegistered,
@@ -55,7 +55,7 @@ let store: LibraryStore
 let quitting = false
 let shortcutError: string | null = null
 let startup: Promise<void>
-let selectionTask: Promise<void> | null = null
+let captures: CaptureController
 
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) app.quit()
@@ -72,6 +72,10 @@ async function show(mode: OpenRequest['mode'], notice?: string) {
   // loadURL can resolve while isLoading() is still true, after did-finish-load
   // has already fired. Share startup's promise instead of waiting for that event again.
   await startup
+  present(mode, notice)
+}
+
+function present(mode: OpenRequest['mode'], notice?: string) {
   if (quitting) return
   if (window.isMinimized()) window.restore()
   window.show()
@@ -83,53 +87,8 @@ async function show(mode: OpenRequest['mode'], notice?: string) {
   } satisfies OpenRequest)
 }
 
-async function capture(fromClipboard: boolean): Promise<Snapshot> {
-  await store.whenIdle()
-  if (fromClipboard) {
-    const text = await clipboard.readText()
-    if (text.length > MAX_CLIP_LENGTH) throw new Error('The copied text is too large to capture.')
-    if (text.length) await store.execute({ type: 'append-capture', text })
-    else await store.execute({ type: 'begin-capture', text: '' })
-  } else {
-    await store.execute({ type: 'begin-capture', text: '' })
-  }
-  return snapshot()
-}
-
-async function captureAndShow() {
-  try {
-    await capture(true)
-    await show('capture')
-  } catch (error) {
-    report(error)
-  }
-}
-
-export async function captureSelectionAndShow() {
-  if (quitting || selectionTask) return
-  selectionTask = (async () => {
-    try {
-      if (process.platform !== 'darwin') return await captureAndShow()
-      // Read before showing or focusing any Machete window.
-      const result = await readSelection()
-      if (quitting) return
-      if (result.status === 'permission-required') return await show('settings')
-      if (result.status === 'captured' && result.text.length) {
-        await store.execute({ type: 'append-capture', text: result.text })
-        await show('capture')
-      } else {
-        await capture(false)
-        await show('capture', selectionNotice(result.status))
-      }
-    } catch (error) {
-      if (!quitting) {
-        await show('browse', error instanceof Error ? error.message : 'Selection capture failed.')
-      }
-    }
-  })().finally(() => {
-    selectionTask = null
-  })
-  await selectionTask
+export function captureSelectionAndShow() {
+  return captures.request('selection')
 }
 
 function registerShortcut(accelerator: string): boolean {
@@ -189,7 +148,10 @@ function installHandlers() {
     await store.whenIdle()
     return snapshot()
   })
-  handle(channels.capture, (payload) => capture(z.boolean().parse(payload)))
+  handle(channels.capture, async (payload) => {
+    await captures.request(z.boolean().parse(payload) ? 'clipboard' : 'empty', false)
+    return snapshot()
+  })
   handle(channels.selectionAccess, async (payload) => {
     if (z.boolean().parse(payload)) await requestSelectionAccess()
     return refreshSelectionAccess()
@@ -281,6 +243,17 @@ function installHandlers() {
 async function start() {
   await app.whenReady()
   store = await LibraryStore.open(join(app.getPath('userData'), 'collection.json'))
+  captures = new CaptureController(
+    store,
+    {
+      selection:
+        process.platform === 'darwin'
+          ? readSelection
+          : async () => ({ status: 'captured', text: await clipboard.readText() }),
+      clipboard: () => clipboard.readText(),
+    },
+    { ready: () => startup, show: present },
+  )
   const rendererRoot = resolve(directory, '../renderer')
   protocol.handle('machete', (request) => {
     const url = new URL(request.url)
@@ -328,7 +301,7 @@ async function start() {
   tray.on('click', () => void show('browse'))
   const trayMenu = Menu.buildFromTemplate([
     { label: 'Open Machete', click: () => void show('browse') },
-    { label: 'Capture clipboard', click: () => void captureAndShow() },
+    { label: 'Capture clipboard', click: () => void captures.request('clipboard').catch(report) },
     { type: 'separator' },
     { label: 'Quit Machete', role: 'quit' },
   ])
@@ -372,10 +345,7 @@ if (hasLock) {
     event.preventDefault()
     quitting = true
     stopDoubleShift()
-    // Let an in-flight Copy restore the clipboard before exiting.
-    void Promise.resolve(selectionTask)
-      .then(() => store.whenIdle())
-      .finally(() => app.quit())
+    void captures.stop().finally(() => app.quit())
   })
   app.on('will-quit', () => globalShortcut.unregisterAll())
   startup = start().catch((error) => {
