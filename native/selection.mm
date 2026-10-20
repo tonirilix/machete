@@ -180,4 +180,4 @@ napi_value initialize(napi_env env, napi_value exports) {
   return exports;
 }
 }
-NAPI_MODULE(cliptoboards_selection, initialize)
+NAPI_MODULE(machete_selection, initialize)

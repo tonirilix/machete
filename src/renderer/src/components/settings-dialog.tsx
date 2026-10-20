@@ -74,7 +74,7 @@ export function SettingsDialog({ shortcut, onClose, onShortcut, onImported }: Pr
       <DialogContent className="max-h-[calc(100vh-3rem)] max-w-[420px] gap-6 overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Make yourself at home</DialogTitle>
-          <DialogDescription>A few things to keep Cliptoboards close by.</DialogDescription>
+          <DialogDescription>A few things to keep Machete close by.</DialogDescription>
         </DialogHeader>
         <section className="space-y-3">
           <h2 className="flex items-center gap-2 text-sm font-medium">
@@ -177,7 +177,7 @@ export function SettingsDialog({ shortcut, onClose, onShortcut, onImported }: Pr
             <p className="text-xs leading-5 text-muted-foreground">
               {access.granted
                 ? 'Enabled. Select text in another app and press your capture shortcut. New selections append to your unfinished note.'
-                : 'Allow Cliptoboards in System Settings → Privacy & Security → Accessibility. Then select text in another app and press your capture shortcut.'}
+                : 'Allow Machete in System Settings → Privacy & Security → Accessibility. Then select text in another app and press your capture shortcut.'}
             </p>
             <p className="text-[11px] leading-5 text-muted-foreground">
               Reads selections only when you invoke capture. You choose when to save.
@@ -243,7 +243,7 @@ export function SettingsDialog({ shortcut, onClose, onShortcut, onImported }: Pr
           </p>
         </section>
         <div className="flex items-center justify-between border-t pt-4 text-[11px] text-muted-foreground">
-          <span>Cliptoboards</span>
+          <span>Machete</span>
           <span>Version 0.1.0</span>
         </div>
       </DialogContent>

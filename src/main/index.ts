@@ -37,13 +37,16 @@ import {
 } from './selection'
 
 const directory = dirname(fileURLToPath(import.meta.url))
-app.setName('Cliptoboards')
+app.setName('Machete')
 app.setPath(
   'userData',
-  process.env.CLIPTOBOARDS_DATA_DIR || join(app.getPath('appData'), 'Cliptoboards'),
+  // Preserve the existing collection and the previous data-directory override.
+  process.env.MACHETE_DATA_DIR ||
+    process.env.CLIPTOBOARDS_DATA_DIR ||
+    join(app.getPath('appData'), 'Cliptoboards'),
 )
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'cliptoboards', privileges: { secure: true, standard: true, supportFetchAPI: true } },
+  { scheme: 'machete', privileges: { secure: true, standard: true, supportFetchAPI: true } },
 ])
 
 let window: BrowserWindow
@@ -62,10 +65,7 @@ function snapshot(): Snapshot {
 }
 
 function report(error: unknown) {
-  dialog.showErrorBox(
-    'Cliptoboards',
-    error instanceof Error ? error.message : 'Something went wrong.',
-  )
+  dialog.showErrorBox('Machete', error instanceof Error ? error.message : 'Something went wrong.')
 }
 
 async function show(mode: OpenRequest['mode'], notice?: string) {
@@ -110,7 +110,7 @@ export async function captureSelectionAndShow() {
   selectionTask = (async () => {
     try {
       if (process.platform !== 'darwin') return await captureAndShow()
-      // Read before showing or focusing any Cliptoboards window.
+      // Read before showing or focusing any Machete window.
       const result = await readSelection()
       if (quitting) return
       if (result.status === 'permission-required') return await show('settings')
@@ -235,9 +235,9 @@ function installHandlers() {
       title: 'Export your collection',
       defaultPath: join(
         app.getPath('downloads'),
-        `cliptoboards-${new Date().toISOString().slice(0, 10)}.json`,
+        `machete-${new Date().toISOString().slice(0, 10)}.json`,
       ),
-      filters: [{ name: 'Cliptoboards collection', extensions: ['json'] }],
+      filters: [{ name: 'Machete collection', extensions: ['json'] }],
     })
     if (canceled || !filePath) return false
     await writeFile(filePath, JSON.stringify(exportBackup(store.getState()), null, 2), {
@@ -250,7 +250,7 @@ function installHandlers() {
     const { canceled, filePaths } = await dialog.showOpenDialog(window, {
       title: 'Import a collection',
       properties: ['openFile'],
-      filters: [{ name: 'Cliptoboards collection', extensions: ['json'] }],
+      filters: [{ name: 'Machete collection', extensions: ['json'] }],
     })
     if (canceled || !filePaths[0]) return null
     if ((await stat(filePaths[0])).size > 64 * 1024 * 1024) {
@@ -260,7 +260,7 @@ function installHandlers() {
     try {
       backup = backupSchema.parse(JSON.parse(await readFile(filePaths[0], 'utf8')))
     } catch {
-      throw new Error('This is not a supported Cliptoboards collection. Your library is unchanged.')
+      throw new Error('This is not a supported Machete collection. Your library is unchanged.')
     }
     const { response } = await dialog.showMessageBox(window, {
       type: 'warning',
@@ -282,7 +282,7 @@ async function start() {
   await app.whenReady()
   store = await LibraryStore.open(join(app.getPath('userData'), 'collection.json'))
   const rendererRoot = resolve(directory, '../renderer')
-  protocol.handle('cliptoboards', (request) => {
+  protocol.handle('machete', (request) => {
     const url = new URL(request.url)
     const target = resolve(rendererRoot, `.${decodeURIComponent(url.pathname)}`)
     if (url.host !== 'app' || !target.startsWith(`${rendererRoot}${sep}`)) {
@@ -299,7 +299,7 @@ async function start() {
     minWidth: 480,
     minHeight: 560,
     show: false,
-    title: 'Cliptoboards',
+    title: 'Machete',
     backgroundColor: '#f7f8f5',
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 16, y: 19 },
@@ -324,19 +324,19 @@ async function start() {
   const image = nativeImage.createFromPath(join(directory, '../../resources/trayTemplate.png'))
   image.setTemplateImage(true)
   tray = new Tray(image.resize({ width: 18, height: 18 }))
-  tray.setToolTip('Cliptoboards')
+  tray.setToolTip('Machete')
   tray.on('click', () => void show('browse'))
   const trayMenu = Menu.buildFromTemplate([
-    { label: 'Open Cliptoboards', click: () => void show('browse') },
+    { label: 'Open Machete', click: () => void show('browse') },
     { label: 'Capture clipboard', click: () => void captureAndShow() },
     { type: 'separator' },
-    { label: 'Quit Cliptoboards', role: 'quit' },
+    { label: 'Quit Machete', role: 'quit' },
   ])
   tray.on('right-click', () => tray.popUpContextMenu(trayMenu))
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
-        label: 'Cliptoboards',
+        label: 'Machete',
         submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }],
       },
       { role: 'editMenu' },
@@ -351,7 +351,7 @@ async function start() {
         : 'Your capture shortcut is unavailable. Choose a different one in Settings.'
   }
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
-  await window.loadURL(developmentUrl || 'cliptoboards://app/index.html')
+  await window.loadURL(developmentUrl || 'machete://app/index.html')
 }
 
 if (hasLock) {

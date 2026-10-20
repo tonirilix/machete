@@ -1,4 +1,4 @@
-# Cliptoboards MVP
+# Machete MVP
 
 The user accepted interview recommendations Q1-Q22 and requested a simpler
 approach to backup and further design detail. The user confirmed this consolidated

@@ -18,4 +18,4 @@ const bridge: DesktopBridge = {
   },
 }
 
-contextBridge.exposeInMainWorld('cliptoboards', bridge)
+contextBridge.exposeInMainWorld('machete', bridge)

@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const require = createRequire(import.meta.url)
-const directory = await mkdtemp(join(tmpdir(), 'cliptoboards-desktop-'))
-const environment = { ...process.env, CLIPTOBOARDS_DATA_DIR: directory }
+const directory = await mkdtemp(join(tmpdir(), 'machete-desktop-'))
+const environment = { ...process.env, MACHETE_DATA_DIR: directory }
 // Electron-hosted terminals may inherit this variable from their parent app.
 delete environment.ELECTRON_RUN_AS_NODE
 

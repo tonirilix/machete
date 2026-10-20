@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 if (process.platform === 'darwin') {
-  const directory = await mkdtemp(join(tmpdir(), 'cliptoboards-native-'))
+  const directory = await mkdtemp(join(tmpdir(), 'machete-native-'))
   const executable = join(directory, 'pasteboard-test')
   try {
     for (const [command, args] of [

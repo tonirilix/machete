@@ -1,4 +1,4 @@
-# Cliptoboards
+# Machete
 
 A small desktop space for useful text. Save a command, a link, or a thought;
 organize clips into boards; find and copy them when you need them again.
@@ -38,11 +38,11 @@ and never records typed text.
 
 ### Enable selection capture on macOS
 
-In Cliptoboards Settings, click **Enable selection capture**, then allow
-**Cliptoboards** under **Privacy & Security → Accessibility** in System Settings.
+In Machete Settings, click **Enable selection capture**, then allow
+**Machete** under **Privacy & Security → Accessibility** in System Settings.
 Return to another app, select text, and press **Cmd+Shift+Space**. The selection
 appears in the editor; **Cmd+Enter** saves it. If permission does not update,
-quit and reopen Cliptoboards. Use the packaged app when granting permission;
+quit and reopen Machete. Use the packaged app when granting permission;
 development mode runs under Electron's identity.
 Replacing an unsigned app bundle can reset its Accessibility grant; if that
 happens after rebuilding, enable the app again in System Settings.
@@ -66,7 +66,11 @@ and Trash. Import validates the file and asks for confirmation before replacing
 the collection; the local shortcut is preserved and the unfinished draft is
 cleared. Drafts and device settings are not part of the portable backup.
 
-Set `CLIPTOBOARDS_DATA_DIR` to a separate directory when testing with disposable
+Machete keeps the original `Cliptoboards` collection directory, backup format
+identifier, and macOS bundle identifier for compatibility with existing data and
+installations. The app and npm package are now named Machete and `machete`.
+
+Set `MACHETE_DATA_DIR` to a separate directory when testing with disposable
 desktop data.
 
 ## Browser preview
@@ -96,7 +100,7 @@ npm run test:selection
 `pack` creates an unsigned local application in `release/`. Signing, notarization,
 and automatic updates are future distribution work.
 
-On macOS, open the packaged app with `open release/mac/Cliptoboards.app`.
+On macOS, open the packaged app with `open release/mac/Machete.app`.
 Running that command again brings the existing window forward.
 
 The macOS launch check requires a desktop session, Xcode Command Line Tools, and

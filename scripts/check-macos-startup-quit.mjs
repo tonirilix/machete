@@ -8,8 +8,8 @@ import { join, resolve } from 'node:path'
 if (process.platform !== 'darwin')
   throw new Error('This check requires macOS and a desktop session.')
 
-const directory = await mkdtemp(join(tmpdir(), 'cliptoboards-startup-quit-'))
-const bundle = join(directory, 'Cliptoboards Launch Check.app')
+const directory = await mkdtemp(join(tmpdir(), 'machete-startup-quit-'))
+const bundle = join(directory, 'Machete Launch Check.app')
 const stderr = join(directory, 'stderr.log')
 const environment = { ...process.env }
 delete environment.ELECTRON_RUN_AS_NODE
@@ -83,7 +83,7 @@ async function connect(url) {
 const electron = `process.getBuiltinModule('module').createRequire(process.resourcesPath + '/app.asar/package.json')('electron')`
 
 try {
-  await cp(resolve('release/mac/Cliptoboards.app'), bundle, {
+  await cp(resolve('release/mac/Machete.app'), bundle, {
     recursive: true,
     verbatimSymlinks: true,
     mode: constants.COPYFILE_FICLONE,
@@ -96,7 +96,7 @@ try {
   ])
   run('/usr/bin/open', [
     '--env',
-    `CLIPTOBOARDS_DATA_DIR=${join(directory, 'data')}`,
+    `MACHETE_DATA_DIR=${join(directory, 'data')}`,
     '--stderr',
     stderr,
     bundle,

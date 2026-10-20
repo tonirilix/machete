@@ -8,8 +8,8 @@ import { join, resolve } from 'node:path'
 if (process.platform !== 'darwin')
   throw new Error('This check requires macOS and a desktop session.')
 
-const directory = await mkdtemp(join(tmpdir(), 'cliptoboards-launch-'))
-const bundle = join(directory, 'Cliptoboards Launch Check.app')
+const directory = await mkdtemp(join(tmpdir(), 'machete-launch-'))
+const bundle = join(directory, 'Machete Launch Check.app')
 const stderr = join(directory, 'stderr.log')
 const environment = { ...process.env }
 delete environment.ELECTRON_RUN_AS_NODE
@@ -85,7 +85,7 @@ const status = `(() => {
 })()`
 
 try {
-  await cp(resolve(process.argv[2] || 'release/mac/Cliptoboards.app'), bundle, {
+  await cp(resolve(process.argv[2] || 'release/mac/Machete.app'), bundle, {
     recursive: true,
     verbatimSymlinks: true,
     mode: constants.COPYFILE_FICLONE,
@@ -100,7 +100,7 @@ try {
   run('/usr/bin/open', [
     '-n',
     '--env',
-    `CLIPTOBOARDS_DATA_DIR=${join(directory, 'data')}`,
+    `MACHETE_DATA_DIR=${join(directory, 'data')}`,
     '--stderr',
     stderr,
     bundle,
@@ -190,7 +190,7 @@ try {
   if (!processId) {
     const result = spawnSync(
       '/usr/bin/pgrep',
-      ['-f', join(bundle, 'Contents/MacOS/Cliptoboards')],
+      ['-f', join(bundle, 'Contents/MacOS/Machete')],
       { encoding: 'utf8' },
     )
     processId = Number(result.stdout.trim().split('\n')[0]) || undefined

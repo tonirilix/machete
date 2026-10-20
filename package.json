@@ -1,5 +1,5 @@
 {
-  "name": "cliptoboards",
+  "name": "machete",
   "version": "0.1.0",
   "description": "A little space for useful things. Save and reuse clips across your apps.",
   "private": true,
@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "com.tonirilix.cliptoboards",
-    "productName": "Cliptoboards",
+    "productName": "Machete",
     "electronFuses": {
       "runAsNode": false
     },

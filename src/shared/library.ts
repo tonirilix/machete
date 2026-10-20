@@ -70,6 +70,7 @@ export const librarySchema = z
     }
   })
 
+// The version 1 backup identifier stays stable across the Machete rename.
 export const backupSchema = z
   .object({
     format: z.literal('cliptoboards'),

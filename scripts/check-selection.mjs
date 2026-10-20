@@ -9,13 +9,13 @@ if (process.platform !== 'darwin')
   throw new Error(
     'Selection checks require macOS and Accessibility permission for the packaged app.',
   )
-const directory = await mkdtemp(join(tmpdir(), 'cliptoboards-selection-check-'))
+const directory = await mkdtemp(join(tmpdir(), 'machete-selection-check-'))
 const observer = join(directory, 'observe')
 const fixture = join(directory, 'fixture')
 const keyboard = join(directory, 'keyboard.node')
 const logPath = join(directory, 'main.log')
 const dataPath = join(directory, 'data')
-const bundle = resolve('release/mac/Cliptoboards.app')
+const bundle = resolve('release/mac/Machete.app')
 const identifier = 'com.tonirilix.cliptoboards'
 const environment = { ...process.env }
 delete environment.ELECTRON_RUN_AS_NODE
@@ -93,7 +93,7 @@ const renderer = (expression) =>
   inspector.evaluate(
     `${electron}.BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(${JSON.stringify(expression)})`,
   )
-const current = () => renderer('window.cliptoboards.getState()')
+const current = () => renderer('window.machete.getState()')
 const capture = () =>
   inspector.evaluate(`(async () => {
   const entry = ${requireExpression}(${electron}.app.getAppPath() + '/out/main/index.js');
@@ -153,7 +153,7 @@ try {
   await quitApp()
   run('/usr/bin/open', [
     '--env',
-    `CLIPTOBOARDS_DATA_DIR=${dataPath}`,
+    `MACHETE_DATA_DIR=${dataPath}`,
     '--stderr',
     logPath,
     bundle,
@@ -182,14 +182,14 @@ try {
     'App did not load',
   )
   await until(
-    () => renderer('typeof window.cliptoboards?.selectionAccess === "function"').catch(() => false),
+    () => renderer('typeof window.machete?.selectionAccess === "function"').catch(() => false),
     Boolean,
     'Sandboxed bridge did not become ready',
   )
-  const access = await renderer('window.cliptoboards.selectionAccess()')
+  const access = await renderer('window.machete.selectionAccess()')
   assert.ok(
     access.granted,
-    'Enable Cliptoboards in System Settings → Privacy & Security → Accessibility, then rerun this check.',
+    'Enable Machete in System Settings → Privacy & Security → Accessibility, then rerun this check.',
   )
   const shortcut = (await current()).library.settings.shortcut
   assert.equal(
@@ -209,10 +209,10 @@ try {
   assert.equal(await renderer('document.querySelector("textarea")?.value'), first)
   console.log('PASS: native selected text reaches the editor verbatim, once, without saving a clip')
 
-  await renderer('window.cliptoboards.execute({type:"create-board",name:"Selection test"})')
+  await renderer('window.machete.execute({type:"create-board",name:"Selection test"})')
   const boardId = (await current()).library.boards[1].id
   await renderer(
-    `window.cliptoboards.execute(${JSON.stringify({ type: 'update-draft', text: first, boardId })})`,
+    `window.machete.execute(${JSON.stringify({ type: 'update-draft', text: first, boardId })})`,
   )
   await openFixture('direct', 'second selection')
   await capture()
@@ -244,7 +244,7 @@ try {
   )
 
   await renderer(
-    `window.cliptoboards.execute(${JSON.stringify({ type: 'save-draft', text: expected, boardId })})`,
+    `window.machete.execute(${JSON.stringify({ type: 'save-draft', text: expected, boardId })})`,
   )
   const saved = JSON.parse(await readFile(join(dataPath, 'collection.json'), 'utf8'))
   assert.equal(saved.clips[0].text, expected)
@@ -253,7 +253,7 @@ try {
   console.log('PASS: explicit save persists exactly one clip in the selected board')
 
   const conventional = shortcut
-  await renderer('window.cliptoboards.execute({type:"set-shortcut",shortcut:"DoubleShift"})')
+  await renderer('window.machete.execute({type:"set-shortcut",shortcut:"DoubleShift"})')
   assert.equal(
     await inspector.evaluate(
       `${electron}.globalShortcut.isRegistered(${JSON.stringify(conventional)})`,
@@ -319,7 +319,7 @@ try {
   console.log('PASS: right Shift also captures and appends to the existing draft')
 
   await renderer(
-    `window.cliptoboards.execute(${JSON.stringify({ type: 'set-shortcut', shortcut: conventional })})`,
+    `window.machete.execute(${JSON.stringify({ type: 'set-shortcut', shortcut: conventional })})`,
   )
   await openFixture('direct', 'must not be captured')
   await shift()
@@ -341,7 +341,7 @@ try {
   inspector?.close()
   if (helperReady && launched) {
     await quitApp()
-    run('/usr/bin/open', ['--env', 'CLIPTOBOARDS_DATA_DIR=', bundle])
+    run('/usr/bin/open', ['--env', 'MACHETE_DATA_DIR=', bundle])
   }
   await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
 }

@@ -1,4 +1,4 @@
-# Cliptoboards
+# Machete
 
 A place to keep deliberately saved content for later reuse.
 

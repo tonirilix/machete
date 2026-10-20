@@ -32,7 +32,7 @@ int main(int argc, const char *argv[]) {
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 180, 620, 280)
       styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
       backing:NSBackingStoreBuffered defer:NO];
-    window.title = @"Cliptoboards selection fixture";
+    window.title = @"Machete selection fixture";
     if ([mode isEqualToString:@"fallback"]) {
       CopyView *view = [[CopyView alloc] initWithFrame:window.contentView.bounds];
       view.payload = payload;

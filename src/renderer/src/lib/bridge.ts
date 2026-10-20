@@ -12,6 +12,7 @@ import {
 
 // The browser preview uses its own collection. The desktop app always uses IPC.
 function createBrowserBridge(): DesktopBridge {
+  // Keep collections saved by the browser preview before the rename.
   const key = 'cliptoboards.browser-preview.v1'
   let library: Library | undefined
 
@@ -65,7 +66,7 @@ function createBrowserBridge(): DesktopBridge {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `cliptoboards-${new Date().toISOString().slice(0, 10)}.json`
+      link.download = `machete-${new Date().toISOString().slice(0, 10)}.json`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       return true
@@ -85,8 +86,7 @@ function createBrowserBridge(): DesktopBridge {
               if (file.size > 64 * 1024 * 1024)
                 throw new Error('This collection file is too large.')
               const backup = backupSchema.safeParse(JSON.parse(await file.text()))
-              if (!backup.success)
-                throw new Error('This is not a supported Cliptoboards collection.')
+              if (!backup.success) throw new Error('This is not a supported Machete collection.')
               if (
                 !confirm(
                   'Replace your current boards, clips, Trash, and draft with this collection?',
@@ -108,13 +108,13 @@ function createBrowserBridge(): DesktopBridge {
 }
 
 function getBridge(): DesktopBridge {
-  if (window.cliptoboards) return window.cliptoboards
+  if (window.machete) return window.machete
   if (import.meta.env.DEV) return createBrowserBridge()
-  throw new Error('The desktop connection is unavailable. Please restart Cliptoboards.')
+  throw new Error('The desktop connection is unavailable. Please restart Machete.')
 }
 
 export const bridge = getBridge()
-export const isDesktop = Boolean(window.cliptoboards)
+export const isDesktop = Boolean(window.machete)
 
 export function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.'

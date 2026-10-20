@@ -8,8 +8,8 @@ import { join, resolve } from 'node:path'
 if (process.platform !== 'darwin')
   throw new Error('This check requires macOS and a desktop session.')
 
-const directory = await mkdtemp(join(tmpdir(), 'cliptoboards-cold-launch-'))
-const bundle = join(directory, 'Cliptoboards.app')
+const directory = await mkdtemp(join(tmpdir(), 'machete-cold-launch-'))
+const bundle = join(directory, 'Machete.app')
 const observer = join(directory, 'observe')
 const identifier = `com.tonirilix.cliptoboards.coldcheck.${process.pid}`
 const environment = { ...process.env }
@@ -60,7 +60,7 @@ function dockApp(apps) {
 try {
   run('/usr/bin/xcrun', ['swiftc', resolve('tests/macos-app.swift'), '-o', observer])
   observerReady = true
-  await cp(resolve(process.argv[2] || 'release/mac/Cliptoboards.app'), bundle, {
+  await cp(resolve(process.argv[2] || 'release/mac/Machete.app'), bundle, {
     recursive: true,
     verbatimSymlinks: true,
     mode: constants.COPYFILE_FICLONE,
@@ -77,7 +77,7 @@ try {
     // No debugger flags or startup instrumentation: use the user's launch command.
     run('/usr/bin/open', [
       '--env',
-      `CLIPTOBOARDS_DATA_DIR=${join(directory, 'data')}`,
+      `MACHETE_DATA_DIR=${join(directory, 'data')}`,
       // Electron-hosted terminals can supply this variable. It must not change
       // the packaged GUI app into a Node process before our main code runs.
       ...(electronTerminal ? ['--env', 'ELECTRON_RUN_AS_NODE=1'] : []),

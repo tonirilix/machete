@@ -315,7 +315,7 @@ export function App() {
             <Layers2 className="size-4" />
           </span>
           <span className="text-[13px] font-semibold tracking-[-0.03em]">
-            cliptoboards<span className="text-primary">.</span>
+            machete<span className="text-primary">.</span>
           </span>
         </div>
         <button

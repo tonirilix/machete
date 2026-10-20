@@ -6,7 +6,7 @@ import { LibraryStore } from '../src/main/store'
 
 let directory: string
 beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), 'cliptoboards-test-'))
+  directory = await mkdtemp(join(tmpdir(), 'machete-test-'))
 })
 afterEach(async () => {
   await rm(directory, { recursive: true, force: true })

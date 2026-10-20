@@ -31,7 +31,7 @@ app.once('browser-window-created', (_event, window) => {
   )
   window.webContents.once('did-finish-load', async () => {
     try {
-      const initial = await window.webContents.executeJavaScript('window.cliptoboards.getState()')
+      const initial = await window.webContents.executeJavaScript('window.machete.getState()')
       assert.equal(initial.library.clips.length, 0)
       assert.equal(window.webContents.getLastWebPreferences().sandbox, true)
       assert.equal(window.webContents.getLastWebPreferences().contextIsolation, true)
@@ -51,29 +51,29 @@ app.once('browser-window-created', (_event, window) => {
       const text = 'git status --short\n  # native clipboard smoke test'
       await clipboard.writeText(text)
       const captured = await window.webContents.executeJavaScript(
-        'window.cliptoboards.capture(true)',
+        'window.machete.capture(true)',
       )
       assert.equal(captured.library.draft.text, text)
       assert.equal(captured.library.clips.length, 0)
       const saved = await window.webContents.executeJavaScript(
-        `window.cliptoboards.execute(${JSON.stringify({ type: 'save-draft', text, boardId: 'inbox' })})`,
+        `window.machete.execute(${JSON.stringify({ type: 'save-draft', text, boardId: 'inbox' })})`,
       )
       assert.equal(saved.library.clips[0].text, text)
       assert.equal(saved.library.draft, null)
       await window.webContents.executeJavaScript(
-        `window.cliptoboards.copy(${JSON.stringify(text)})`,
+        `window.machete.copy(${JSON.stringify(text)})`,
       )
       assert.equal(await clipboard.readText(), text)
       const disk = JSON.parse(
-        await readFile(join(process.env.CLIPTOBOARDS_DATA_DIR, 'collection.json'), 'utf8'),
+        await readFile(join(process.env.MACHETE_DATA_DIR, 'collection.json'), 'utf8'),
       )
       assert.equal(disk.clips[0].text, text)
 
       // Startup shows the window after loading; let that finish before hiding it.
       await new Promise((done) => setTimeout(done, 100))
       const rendered = await window.webContents.executeJavaScript('document.body.innerText')
-      assert.ok(rendered.includes('Cliptoboards') || rendered.includes('cliptoboards'))
-      await window.webContents.executeJavaScript('window.cliptoboards.hide()')
+      assert.ok(rendered.includes('Machete') || rendered.includes('machete'))
+      await window.webContents.executeJavaScript('window.machete.hide()')
       assert.equal(window.isVisible(), false)
       await finish()
     } catch (error) {

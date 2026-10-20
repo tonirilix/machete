@@ -12,7 +12,7 @@ int main() {
     [first setData:richText forType:NSPasteboardTypeRTF];
     NSPasteboardItem *second = [[NSPasteboardItem alloc] init];
     NSData *binary = [NSData dataWithBytes:"\0\1\2\3" length:4];
-    [second setData:binary forType:@"com.cliptoboards.test.binary"];
+    [second setData:binary forType:@"com.machete.test.binary"];
     [board clearContents];
     assert(([board writeObjects:@[first, second]]));
     PasteboardSnapshot saved;
@@ -24,7 +24,7 @@ int main() {
     assert(board.pasteboardItems.count == 2);
     assert([[board.pasteboardItems[0] stringForType:NSPasteboardTypeString] isEqualToString:@"original\n  text"]);
     assert([[board.pasteboardItems[0] dataForType:NSPasteboardTypeRTF] isEqualToData:richText]);
-    assert([[board.pasteboardItems[1] dataForType:@"com.cliptoboards.test.binary"] isEqualToData:binary]);
+    assert([[board.pasteboardItems[1] dataForType:@"com.machete.test.binary"] isEqualToData:binary]);
 
     assert(snapshotPasteboard(board, saved));
     [board clearContents];
