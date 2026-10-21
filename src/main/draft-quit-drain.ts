@@ -28,6 +28,10 @@ export class DraftQuitDrain {
     }
   }
 
+  disconnect() {
+    if (this.registrationId) this.register(this.registrationId, false)
+  }
+
   drain(): Promise<void> {
     // Startup can quit before React has installed a handler; there is no local typing yet.
     if (!this.registrationId) return Promise.resolve()

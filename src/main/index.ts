@@ -51,13 +51,13 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'machete', privileges: { secure: true, standard: true, supportFetchAPI: true } },
 ])
 
-let window: BrowserWindow
-let tray: Tray
+let window: BrowserWindow | null = null
+let windowReady: Promise<void> | null = null
+let tray: Tray | null = null
 let store: LibraryStore
-let quitting = false
-let preparingQuit = false
+let quitPhase: 'running' | 'draining' | 'quitting' = 'running'
 const draftQuit = new DraftQuitDrain((request) =>
-  window.webContents.send(channels.draftDrainRequested, request),
+  requireWindow().webContents.send(channels.draftDrainRequested, request),
 )
 let startup: Promise<void>
 let shortcuts: ShortcutController
@@ -76,42 +76,98 @@ function snapshot(): Snapshot {
 }
 
 function report(error: unknown) {
+  if (quitPhase === 'quitting') return
   dialog.showErrorBox('Machete', error instanceof Error ? error.message : 'Something went wrong.')
 }
 
-async function show(mode: OpenRequest['mode'], notice?: string) {
-  // loadURL can resolve while isLoading() is still true, after did-finish-load
-  // has already fired. Share startup's promise instead of waiting for that event again.
+function requireWindow() {
+  const current = window
+  if (!current) throw new Error('The app window is no longer available.')
+  return current
+}
+
+async function readyToPresent() {
   await startup
+  if (quitPhase === 'running') await (window ? windowReady : createWindow())
+}
+
+async function show(mode: OpenRequest['mode'], notice?: string) {
+  await readyToPresent()
   present(mode, notice)
 }
 
 function present(mode: OpenRequest['mode'], notice?: string) {
-  if (quitting) return
-  if (window.isMinimized()) window.restore()
-  window.show()
-  window.focus()
-  window.webContents.send(channels.openRequested, {
+  if (quitPhase !== 'running') return
+  const current = window
+  if (!current) return
+  if (current.isMinimized()) current.restore()
+  current.show()
+  current.focus()
+  current.webContents.send(channels.openRequested, {
     mode,
     snapshot: snapshot(),
     notice,
   } satisfies OpenRequest)
 }
 
+function browse() {
+  if (quitPhase === 'running') void show('browse').catch(report)
+}
+
+async function prepareToQuit() {
+  if (quitPhase !== 'running') return
+  quitPhase = 'draining'
+  try {
+    await draftQuit.drain()
+  } catch (error) {
+    quitPhase = 'running'
+    if (window) {
+      window.webContents.send(channels.draftDrainCancelled)
+      window.show()
+    } else {
+      browse()
+    }
+    report(error)
+    return
+  }
+  quitPhase = 'quitting'
+  try {
+    // Both cleanups must settle so native Copy can restore the clipboard even
+    // if another cleanup throws. Electron closes the window after we resume quit.
+    const results = await Promise.allSettled([
+      Promise.resolve().then(() => shortcuts?.stop()),
+      Promise.resolve().then(() => captures?.stop()),
+    ])
+    await store?.whenIdle()
+    for (const result of results) {
+      if (result.status === 'rejected') console.error('Could not finish shutdown:', result.reason)
+    }
+  } catch (error) {
+    console.error('Could not finish shutdown:', error)
+  } finally {
+    app.quit()
+  }
+}
+
 export function captureSelectionAndShow() {
-  if (preparingQuit || quitting) return Promise.resolve()
+  if (quitPhase !== 'running' || !captures) return Promise.resolve()
   return captures.request('selection')
 }
 
 async function refreshSelectionAccess() {
   const access = selectionAccess()
-  if (access.granted) await shortcuts.recover()
+  if (quitPhase === 'running') await shortcuts.recover()
   return access
 }
 
 function handle(channel: string, handler: (payload: unknown) => unknown) {
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, payload: unknown) => {
-    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
+    const current = window
+    if (
+      !current ||
+      event.sender !== current.webContents ||
+      event.senderFrame !== current.webContents.mainFrame
+    ) {
       throw new Error('This request did not come from the app window.')
     }
     try {
@@ -141,6 +197,7 @@ function installHandlers() {
     draftQuit.complete(request, request.error)
   })
   handle(channels.state, async () => {
+    await refreshSelectionAccess()
     await store.whenIdle()
     return snapshot()
   })
@@ -165,7 +222,7 @@ function installHandlers() {
     }
   })
   handle(channels.capture, async (payload) => {
-    if (preparingQuit || quitting) throw new Error('Machete is preparing to quit.')
+    if (quitPhase !== 'running') throw new Error('Machete is preparing to quit.')
     await captures.request(z.boolean().parse(payload) ? 'clipboard' : 'empty', false)
     return snapshot()
   })
@@ -189,10 +246,10 @@ function installHandlers() {
       .parse(payload)
     await clipboard.writeText(text)
   })
-  handle(channels.hide, () => window.hide())
+  handle(channels.hide, () => window?.hide())
   handle(channels.export, async () => {
     await store.whenIdle()
-    const { canceled, filePath } = await dialog.showSaveDialog(window, {
+    const { canceled, filePath } = await dialog.showSaveDialog(requireWindow(), {
       title: 'Export your collection',
       defaultPath: join(
         app.getPath('downloads'),
@@ -208,7 +265,7 @@ function installHandlers() {
     return true
   })
   handle(channels.import, async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(window, {
+    const { canceled, filePaths } = await dialog.showOpenDialog(requireWindow(), {
       title: 'Import a collection',
       properties: ['openFile'],
       filters: [{ name: 'Machete collection', extensions: ['json'] }],
@@ -223,7 +280,7 @@ function installHandlers() {
     } catch {
       throw new Error('This is not a supported Machete collection. Your library is unchanged.')
     }
-    const { response } = await dialog.showMessageBox(window, {
+    const { response } = await dialog.showMessageBox(requireWindow(), {
       type: 'warning',
       message: 'Replace your current collection?',
       detail:
@@ -239,9 +296,55 @@ function installHandlers() {
   })
 }
 
+function createWindow() {
+  const created = new BrowserWindow({
+    width: 760,
+    height: 760,
+    minWidth: 480,
+    minHeight: 560,
+    show: false,
+    title: 'Machete',
+    backgroundColor: '#f7f8f5',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 16, y: 19 },
+    webPreferences: {
+      preload: join(directory, '../preload/index.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  })
+  created.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  created.webContents.on('will-navigate', (event) => event.preventDefault())
+  window = created
+  created.on('close', (event) => {
+    if (quitPhase !== 'quitting') {
+      event.preventDefault()
+      created.hide()
+    }
+  })
+  created.on('closed', () => {
+    if (window !== created) return
+    window = null
+    windowReady = null
+    draftQuit.disconnect()
+  })
+  const developmentUrl = process.env.ELECTRON_RENDERER_URL
+  windowReady = created.loadURL(developmentUrl || 'machete://app/index.html').catch((error) => {
+    // Destruction during quit or recovery can abort an in-flight page load.
+    if (created.isDestroyed()) return
+    created.destroy()
+    throw error
+  })
+  return windowReady
+}
+
 async function start() {
   await app.whenReady()
+  if (quitPhase === 'quitting') return
   store = await LibraryStore.open(join(app.getPath('userData'), 'collection.json'))
+  if (quitPhase !== 'running') return
   captures = new CaptureController(
     store,
     {
@@ -251,7 +354,7 @@ async function start() {
           : async () => ({ status: 'captured', text: await clipboard.readText() }),
       clipboard: () => clipboard.readText(),
     },
-    { ready: () => startup, show: present },
+    { ready: readyToPresent, show: present },
   )
   shortcuts = new ShortcutController(
     store,
@@ -277,51 +380,27 @@ async function start() {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
     callback(false),
   )
-  window = new BrowserWindow({
-    width: 760,
-    height: 760,
-    minWidth: 480,
-    minHeight: 560,
-    show: false,
-    title: 'Machete',
-    backgroundColor: '#f7f8f5',
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 16, y: 19 },
-    webPreferences: {
-      preload: join(directory, '../preload/index.cjs'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      backgroundThrottling: false,
-    },
-  })
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.webContents.on('will-navigate', (event) => event.preventDefault())
-  window.on('close', (event) => {
-    if (!quitting) {
-      event.preventDefault()
-      window.hide()
-    }
-  })
   installHandlers()
 
   const image = nativeImage.createFromPath(join(directory, '../../resources/trayTemplate.png'))
   image.setTemplateImage(true)
   tray = new Tray(image.resize({ width: 18, height: 18 }))
   tray.setToolTip('Machete')
-  tray.on('click', () => void show('browse'))
+  tray.on('click', browse)
   const trayMenu = Menu.buildFromTemplate([
-    { label: 'Open Machete', click: () => void show('browse') },
+    { label: 'Open Machete', click: browse },
     {
       label: 'Capture clipboard',
       click: () => {
-        if (!preparingQuit && !quitting) void captures.request('clipboard').catch(report)
+        if (quitPhase === 'running') void captures.request('clipboard').catch(report)
       },
     },
     { type: 'separator' },
     { label: 'Quit Machete', role: 'quit' },
   ])
-  tray.on('right-click', () => tray.popUpContextMenu(trayMenu))
+  tray.on('right-click', () => {
+    if (quitPhase === 'running' && tray && !tray.isDestroyed()) tray.popUpContextMenu(trayMenu)
+  })
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
@@ -333,55 +412,36 @@ async function start() {
     ]),
   )
   await shortcuts.start()
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL
-  await window.loadURL(developmentUrl || 'machete://app/index.html')
+  if (quitPhase === 'running') await createWindow()
 }
 
 if (hasLock) {
-  app.on('second-instance', () => {
-    void show('browse')
-  })
+  app.on('second-instance', browse)
   app.on('activate', () => {
+    if (quitPhase !== 'running') return
+    const current = window
     // Focusing our own capture window also activates the app. Preserve its mode.
-    if (window?.isVisible() && !window.isMinimized() && !app.isHidden()) {
-      window.focus()
+    if (current?.isVisible() && !current.isMinimized() && !app.isHidden()) {
+      current.focus()
       return
     }
-    void show('browse')
+    browse()
   })
   app.on('window-all-closed', () => {})
   app.on('before-quit', (event) => {
-    if (quitting || !store) return
+    if (quitPhase === 'quitting') return
     event.preventDefault()
-    if (preparingQuit) return
-    preparingQuit = true
-    void (async () => {
-      try {
-        await draftQuit.drain()
-      } catch (error) {
-        preparingQuit = false
-        if (!window.isDestroyed()) {
-          window.webContents.send(channels.draftDrainCancelled)
-          window.show()
-        }
-        report(error)
-        return
-      }
-      quitting = true
-      await Promise.all([shortcuts?.stop(), captures?.stop()])
-      await store.whenIdle()
-      app.quit()
-    })().catch(report)
+    void prepareToQuit()
   })
-  app.on('will-quit', () => void shortcuts?.stop())
+  app.on('will-quit', () => {
+    tray?.destroy()
+    tray = null
+    globalShortcut.unregisterAll()
+  })
   startup = start().catch((error) => {
-    // Closing the app can reject its initial page load. Shutdown is already
-    // underway; a modal startup error here would prevent it from finishing.
-    if (quitting) return
+    if (quitPhase === 'quitting') return
     report(error)
-    quitting = true
-    void shortcuts?.stop()
-    app.quit()
+    void prepareToQuit()
   })
-  if (!process.argv.includes('--hidden')) void show('browse')
+  if (!process.argv.includes('--hidden')) browse()
 }

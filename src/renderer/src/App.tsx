@@ -118,6 +118,12 @@ export function App() {
     })
   }, [load, acceptSnapshot])
 
+  useEffect(() => {
+    const refresh = () => void load()
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [load])
+
   const run = useCallback(
     async (command: Command) => {
       try {
@@ -207,6 +213,7 @@ export function App() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
       if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return
       const target = event.target
       const typing =
@@ -228,7 +235,6 @@ export function App() {
         if (mode.type !== 'browse') setMode({ type: 'browse' })
         else if (selected.length) setSelected([])
         else if (query) setQuery('')
-        else void bridge.hide()
         return
       }
       if (typing || mode.type !== 'browse') return
@@ -588,6 +594,7 @@ export function App() {
         <SettingsDialog
           shortcut={state.settings.shortcut}
           onClose={() => setSettings(false)}
+          onAccessChanged={load}
           onShortcut={async (shortcut) => Boolean(await run({ type: 'set-shortcut', shortcut }))}
           onImported={async () => {
             await load()
