@@ -117,7 +117,7 @@ export class CaptureController {
 function selectionNotice(status: SelectionResult['status']): string {
   switch (status) {
     case 'no-selection':
-      return 'No selected text found. Select text in another app and try again, or use Capture clipboard.'
+      return 'No selected text found. Select text in another app and try again, or use New clip → Append clipboard.'
     case 'source-changed':
       return 'The active app changed during capture. Select your text and try again.'
     case 'too-large':
@@ -125,12 +125,12 @@ function selectionNotice(status: SelectionResult['status']): string {
     case 'keys-held':
       return 'Release the shortcut keys, then try capturing again.'
     case 'clipboard-unavailable':
-      return 'The clipboard could not be preserved safely. Copy the selection yourself and use Capture clipboard.'
+      return 'The clipboard could not be preserved safely. Copy the selection yourself, then use New clip → Append clipboard.'
     case 'clipboard-busy':
       return 'The clipboard changed during capture. Please try again.'
     case 'restore-failed':
       return 'The previous clipboard could not be restored after Copy. No clip was saved.'
     default:
-      return 'Could not read the selected text. Copy it yourself and use Capture clipboard.'
+      return 'Could not read the selected text. Copy it yourself, then use New clip → Append clipboard.'
   }
 }

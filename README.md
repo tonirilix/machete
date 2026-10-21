@@ -21,7 +21,9 @@ Right-click the menu bar icon to quit. New collections start with an empty Inbox
 - **Cmd+Shift+Space:** capture selected text from another app on macOS; capture
   copied text on other platforms. Each capture saves a separate clip in Inbox,
   without opening an editor or changing your manual draft.
-- **Cmd+N:** write a clip manually.
+- **New clip / Resume draft** or **Cmd+N:** compose a manual draft. Use **Append
+  clipboard** inside the editor to collect multiple pieces into that draft, then
+  save them as one clip. Shortcut captures always save separate clips.
 - **Enter:** insert a newline in the editor.
 - **Cmd+Enter:** save a clip.
 - **Cmd+K:** focus search while browsing.

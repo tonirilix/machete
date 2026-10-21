@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ArrowLeft,
   ArrowUpRight,
+  ClipboardPlus,
   CornerDownLeft,
   FileText,
   LoaderCircle,
@@ -32,6 +33,7 @@ interface Props {
   busy?: boolean
   error?: string | null
   onRetry?: () => void
+  onAppendClipboard?: () => Promise<void>
 }
 
 export function ClipEditor({
@@ -46,6 +48,7 @@ export function ClipEditor({
   busy = false,
   error,
   onRetry,
+  onAppendClipboard,
 }: Props) {
   const [local, setLocal] = useState(initial)
   const { text, boardId } = value ?? local
@@ -54,6 +57,8 @@ export function ClipEditor({
     onChange(draft)
   }
   const [saving, setSaving] = useState(false)
+  const [appending, setAppending] = useState(false)
+  const locked = busy || saving || appending
   const textarea = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -64,7 +69,7 @@ export function ClipEditor({
   const actualBoard = boards.some((board) => board.id === boardId) ? boardId : 'inbox'
 
   async function save() {
-    if (saving || busy || !text.trim()) return
+    if (locked || !text.trim()) return
     setSaving(true)
     try {
       await onSave({ text, boardId: actualBoard })
@@ -89,23 +94,43 @@ export function ClipEditor({
           <p className="mt-0.5 text-xs text-muted-foreground">
             {editing
               ? 'Make it useful for next time.'
-              : 'An idea, a command, a link. Make it yours.'}
+              : 'Write or append clipboard text, then save as one clip.'}
           </p>
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
-        <div className="flex items-center justify-between gap-3">
-          <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <FileText className="size-3.5" /> Plain text
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {onAppendClipboard ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              disabled={locked}
+              onClick={async () => {
+                setAppending(true)
+                try {
+                  await onAppendClipboard()
+                } finally {
+                  setAppending(false)
+                }
+              }}
+            >
+              {appending ? <LoaderCircle className="animate-spin" /> : <ClipboardPlus />}
+              Append clipboard
+            </Button>
+          ) : (
+            <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <FileText className="size-3.5" /> Plain text
+            </span>
+          )}
           <Select
-            disabled={busy || saving}
+            disabled={locked}
             value={actualBoard}
             onValueChange={(value) => {
               change({ text, boardId: value })
             }}
           >
-            <SelectTrigger className="h-8 w-auto min-w-32 text-xs" aria-label="Save to board">
+            <SelectTrigger className="h-8 w-auto min-w-28 text-xs" aria-label="Save to board">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -121,7 +146,7 @@ export function ClipEditor({
           ref={textarea}
           aria-label="Clip text"
           placeholder="Drop something useful here…"
-          disabled={busy || saving}
+          disabled={locked}
           value={text}
           maxLength={MAX_CLIP_LENGTH}
           className="min-h-56 flex-1 resize-none rounded-xl border-border/80 bg-card p-4 font-mono text-[13px] leading-7 shadow-none focus-visible:ring-2"
@@ -158,18 +183,13 @@ export function ClipEditor({
         </div>
       )}
       <footer className="flex items-center justify-between border-t bg-card/50 px-6 py-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void onDiscard()}
-          disabled={saving || busy}
-        >
+        <Button variant="ghost" size="sm" onClick={() => void onDiscard()} disabled={locked}>
           {editing ? <ArrowLeft /> : <Trash2 />} {editing ? 'Cancel' : 'Discard draft'}
         </Button>
         <Button
           aria-label={editing ? 'Save changes' : 'Save clip'}
           onClick={() => void save()}
-          disabled={!text.trim() || saving || busy}
+          disabled={!text.trim() || locked}
         >
           {saving ? <LoaderCircle className="animate-spin" /> : <ArrowUpRight />}
           {editing ? 'Save changes' : 'Save clip'}
@@ -188,12 +208,14 @@ export function DraftEditor({
   onBack,
   onSaved,
   onDiscarded,
+  onAppendClipboard,
 }: {
   editing: DraftEditing
   boards: Board[]
   onBack: () => void
   onSaved: (draft: Draft) => void
   onDiscarded: () => void
+  onAppendClipboard: () => Promise<void>
 }) {
   const state = useSyncExternalStore(editing.subscribe, editing.getState)
   if (!state.draft) return null
@@ -206,6 +228,7 @@ export function DraftEditor({
       busy={state.busy}
       error={state.error}
       onRetry={() => editing.retry()}
+      onAppendClipboard={onAppendClipboard}
       onChange={(draft) => editing.change(draft)}
       onSave={async () => {
         const saved = await editing.save()
