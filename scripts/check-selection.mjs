@@ -1,93 +1,21 @@
 import assert from 'node:assert/strict'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
+import { createPackagedDesktopSession } from './packaged-desktop-session.mjs'
 import { join, resolve } from 'node:path'
 
-if (process.platform !== 'darwin')
-  throw new Error(
-    'Selection checks require macOS and Accessibility permission for the packaged app.',
-  )
-const directory = await mkdtemp(join(tmpdir(), 'machete-selection-check-'))
-const observer = join(directory, 'observe')
+const session = await createPackagedDesktopSession({
+  identity: 'granted',
+  bundle: process.argv[2],
+  label: 'selection-check',
+})
+const { directory, dataPath, environment, run, until } = session
 const fixture = join(directory, 'fixture')
 const keyboard = join(directory, 'keyboard.node')
-const logPath = join(directory, 'main.log')
-const dataPath = join(directory, 'data')
-const bundle = resolve('release/mac/Machete.app')
-const identifier = 'com.tonirilix.cliptoboards'
-const environment = { ...process.env }
-delete environment.ELECTRON_RUN_AS_NODE
 let inspector, source
-let helperReady = false,
-  launched = false
 const delay = (ms) => new Promise((done) => setTimeout(done, ms))
-function run(cmd, args) {
-  const result = spawnSync(cmd, args, { env: environment, encoding: 'utf8' })
-  if (result.error) throw result.error
-  assert.equal(result.status, 0, result.stderr || cmd)
-  return result.stdout
-}
-async function until(read, accept, label, timeout = 10000) {
-  const deadline = Date.now() + timeout
-  let value
-  while (Date.now() < deadline) {
-    value = await read()
-    if (accept(value)) return value
-    await delay(80)
-  }
-  throw new Error(`${label}: ${JSON.stringify(value)}`)
-}
-async function quitApp() {
-  run(observer, [identifier, 'quit'])
-  await until(
-    () => JSON.parse(run(observer, [identifier])),
-    (apps) => apps.length === 0,
-    'App did not quit',
-  )
-  await delay(300)
-}
-async function connect(url) {
-  const socket = new WebSocket(url)
-  await new Promise((done, reject) => {
-    socket.addEventListener('open', done, { once: true })
-    socket.addEventListener('error', reject, { once: true })
-  })
-  let id = 0
-  const pending = new Map()
-  socket.addEventListener('message', ({ data }) => {
-    const response = JSON.parse(data),
-      request = pending.get(response.id)
-    if (!request) return
-    pending.delete(response.id)
-    clearTimeout(request.timeout)
-    if (response.error || response.result.exceptionDetails)
-      request.reject(new Error(JSON.stringify(response.error || response.result.exceptionDetails)))
-    else request.resolve(response.result.result.value)
-  })
-  return {
-    close: () => socket.close(),
-    evaluate(expression) {
-      return new Promise((resolve, reject) => {
-        const requestId = ++id
-        const timeout = setTimeout(() => {
-          pending.delete(requestId)
-          reject(new Error('Main-process check timed out'))
-        }, 15000)
-        pending.set(requestId, { resolve, reject, timeout })
-        socket.send(
-          JSON.stringify({
-            id: requestId,
-            method: 'Runtime.evaluate',
-            params: { expression, returnByValue: true, awaitPromise: true },
-          }),
-        )
-      })
-    },
-  }
-}
 const requireExpression = `process.getBuiltinModule('module').createRequire(process.resourcesPath + '/app.asar/package.json')`
 const electron = `${requireExpression}('electron')`
 const renderer = (expression) =>
@@ -129,8 +57,6 @@ const clipboardFingerprint = `async () => {
   return hash.digest('hex');
 }`
 try {
-  run('/usr/bin/xcrun', ['swiftc', resolve('tests/macos-app.swift'), '-o', observer])
-  helperReady = true
   run('/usr/bin/xcrun', [
     'clang++',
     '-fobjc-arc',
@@ -157,37 +83,9 @@ try {
     '-o',
     keyboard,
   ])
-  await quitApp()
-  run('/usr/bin/open', [
-    '--env',
-    `MACHETE_DATA_DIR=${dataPath}`,
-    '--stderr',
-    logPath,
-    bundle,
-    '--args',
-    '--inspect=127.0.0.1:0',
-  ])
-  launched = true
-  const endpoint = await until(
-    async () =>
-      (await readFile(logPath, 'utf8').catch(() => ''))
-        .split('\n')
-        .find((line) => line.startsWith('Debugger listening on '))
-        ?.slice(22)
-        .trim(),
-    Boolean,
-    'Inspector did not start',
-    20000,
-  )
-  inspector = await connect(endpoint)
-  await until(
-    () =>
-      inspector.evaluate(
-        `(()=>{const E=${electron}; return E.app.isReady() && E.BrowserWindow.getAllWindows().length>0 && !E.BrowserWindow.getAllWindows()[0].webContents.isLoading()})()`,
-      ),
-    Boolean,
-    'App did not load',
-  )
+  session.open({ inspect: true })
+  inspector = await session.connect({ timeout: 15000 })
+  await session.ready()
   await until(
     () => renderer('typeof window.machete?.selectionAccess === "function"').catch(() => false),
     Boolean,
@@ -345,17 +243,5 @@ try {
   process.exitCode = 1
 } finally {
   source?.kill()
-  if (inspector) {
-    // All capture and persistence checks have finished. Stop the disposable
-    // inspected process before asking the native observer to wait for its exit.
-    await inspector
-      .evaluate(`(() => { setTimeout(() => ${electron}.app.exit(0), 100); return true })()`)
-      .catch(() => {})
-    inspector.close()
-  }
-  if (helperReady && launched) {
-    await quitApp()
-    run('/usr/bin/open', ['--env', 'MACHETE_DATA_DIR=', bundle])
-  }
-  await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  await session.dispose()
 }
