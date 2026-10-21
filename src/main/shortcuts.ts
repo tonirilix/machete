@@ -76,7 +76,10 @@ export class ShortcutController {
   private restore(): void {
     if (this.stopped) return
     const shortcut = this.store.getState().settings.shortcut
-    if (this.active?.shortcut === shortcut && this.registered(this.active)) return
+    if (this.active?.shortcut === shortcut && this.registered(this.active)) {
+      this.error = null
+      return
+    }
     const listener = this.register(shortcut)
     if (listener) this.commit(listener)
     else this.error = shortcutMessage(shortcut, true)

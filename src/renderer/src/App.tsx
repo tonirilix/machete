@@ -118,6 +118,12 @@ export function App() {
     })
   }, [load, acceptSnapshot])
 
+  useEffect(() => {
+    const refresh = () => void load()
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [load])
+
   const run = useCallback(
     async (command: Command) => {
       try {
@@ -588,6 +594,7 @@ export function App() {
         <SettingsDialog
           shortcut={state.settings.shortcut}
           onClose={() => setSettings(false)}
+          onAccessChanged={load}
           onShortcut={async (shortcut) => Boolean(await run({ type: 'set-shortcut', shortcut }))}
           onImported={async () => {
             await load()

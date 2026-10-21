@@ -153,7 +153,7 @@ export function captureSelectionAndShow() {
 
 async function refreshSelectionAccess() {
   const access = selectionAccess()
-  if (access.granted) await shortcuts.recover()
+  if (quitPhase === 'running') await shortcuts.recover()
   return access
 }
 
@@ -194,6 +194,7 @@ function installHandlers() {
     draftQuit.complete(request, request.error)
   })
   handle(channels.state, async () => {
+    await refreshSelectionAccess()
     await store.whenIdle()
     return snapshot()
   })

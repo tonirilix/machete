@@ -25,9 +25,16 @@ interface Props {
   onClose: () => void
   onShortcut: (shortcut: string) => Promise<boolean>
   onImported: () => Promise<void>
+  onAccessChanged: () => Promise<void>
 }
 
-export function SettingsDialog({ shortcut, onClose, onShortcut, onImported }: Props) {
+export function SettingsDialog({
+  shortcut,
+  onClose,
+  onShortcut,
+  onImported,
+  onAccessChanged,
+}: Props) {
   const [pending, setPending] = useState(shortcut)
   const [recording, setRecording] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -38,8 +45,10 @@ export function SettingsDialog({ shortcut, onClose, onShortcut, onImported }: Pr
     const refresh = () => {
       void bridge
         .selectionAccess()
-        .then((value) => {
-          if (mounted) setAccess(value)
+        .then(async (value) => {
+          if (!mounted) return
+          setAccess(value)
+          await onAccessChanged()
         })
         .catch(() => {})
     }
@@ -51,7 +60,7 @@ export function SettingsDialog({ shortcut, onClose, onShortcut, onImported }: Pr
       window.removeEventListener('focus', refresh)
       window.clearInterval(interval)
     }
-  }, [])
+  }, [onAccessChanged])
 
   async function perform(action: () => Promise<void>) {
     setBusy(true)

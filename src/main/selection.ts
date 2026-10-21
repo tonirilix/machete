@@ -75,5 +75,5 @@ export function stopDoubleShift() {
 }
 
 export function isDoubleShiftRegistered() {
-  return doubleShiftActive
+  return doubleShiftActive && selectionAccess().granted
 }

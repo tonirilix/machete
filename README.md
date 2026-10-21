@@ -44,8 +44,11 @@ Return to another app, select text, and press **Cmd+Shift+Space**. The selection
 appears in the editor; **Cmd+Enter** saves it. If permission does not update,
 quit and reopen Machete. Use the packaged app when granting permission;
 development mode runs under Electron's identity.
-Replacing an unsigned app bundle can reset its Accessibility grant; if that
-happens after rebuilding, enable the app again in System Settings.
+Local macOS packages use an ad-hoc signature. Rebuilding changes the code identity
+and can require granting Accessibility again. Quit every running Machete copy
+before replacing the app, then grant access to the exact signed copy you launch.
+A switch left enabled for an older build does not prove the new build has access.
+The app refreshes access and shortcut status when it regains focus.
 
 The app reads selections only when you invoke the shortcut. It first asks the
 source app for accessible selected text. When unavailable, it sends Copy and
@@ -97,8 +100,9 @@ npm run test:launch
 npm run test:selection
 ```
 
-`pack` creates an unsigned local application in `release/`. Signing, notarization,
-and automatic updates are future distribution work.
+`pack` creates an ad-hoc signed local macOS application in `release/`. This needs
+no Apple account and does not notarize the app. A persistent Apple signing identity,
+notarization, and automatic updates remain future distribution work.
 
 On macOS, open the packaged app with `open release/mac/Machete.app`.
 Running that command again brings the existing window forward.

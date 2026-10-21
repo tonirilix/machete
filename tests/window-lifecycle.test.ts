@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { channels } from '../src/shared/bridge'
+import { createLibrary, DEFAULT_SHORTCUT, DOUBLE_SHIFT_SHORTCUT } from '../src/shared/library'
 import type { SelectionResult } from '../src/main/selection'
 
 const directories: string[] = []
@@ -18,12 +19,18 @@ afterEach(async () => {
 async function desktop({
   ready = Promise.resolve(),
   load = async () => {},
+  permission = { granted: false },
+  shortcut = DEFAULT_SHORTCUT,
   selection = async (): Promise<SelectionResult> => ({ status: 'captured', text: 'selected text' }),
 } = {}) {
   vi.resetModules()
   const directory = await mkdtemp(join(tmpdir(), 'machete-window-test-'))
   directories.push(directory)
   vi.stubEnv('MACHETE_DATA_DIR', directory)
+  await writeFile(
+    join(directory, 'collection.json'),
+    JSON.stringify({ ...createLibrary(), settings: { shortcut } }),
+  )
   const windows: Window[] = []
   const trays: Tray[] = []
   const handlers = new Map<string, (event: object, payload: unknown) => Promise<unknown>>()
@@ -153,13 +160,21 @@ async function desktop({
     session: { defaultSession: { setPermissionRequestHandler() {} } },
     net: {},
   }))
+  let nativeActive = false
+  const startDoubleShift = vi.fn(() => {
+    if (!permission.granted) return false
+    nativeActive = true
+    return true
+  })
   vi.doMock('../src/main/selection', () => ({
     readSelection: selection,
-    selectionAccess: () => ({ granted: false, supported: true }),
+    selectionAccess: () => ({ granted: permission.granted, supported: true }),
     requestSelectionAccess: vi.fn(),
-    startDoubleShift: () => false,
-    stopDoubleShift: vi.fn(),
-    isDoubleShiftRegistered: () => false,
+    startDoubleShift,
+    stopDoubleShift: vi.fn(() => {
+      nativeActive = false
+    }),
+    isDoubleShiftRegistered: () => nativeActive && permission.granted,
   }))
   const main = await import('../src/main/index')
   const invoke = (window: Window, channel: string, payload: unknown) =>
@@ -171,7 +186,7 @@ async function desktop({
     await vi.waitFor(() => expect(windows.at(-1)?.visible).toBe(true))
     return windows.at(-1)!
   }
-  return { app, windows, trays, dialog, globalShortcut, invoke, loaded, main }
+  return { app, windows, trays, dialog, globalShortcut, invoke, loaded, main, startDoubleShift }
 }
 
 it('handles Dock activation after the native window has been destroyed', async () => {
@@ -447,4 +462,42 @@ it('reports a genuine initial load failure once and cleans up the app', async ()
   )
   expect(d.trays[0].destroyed).toBe(true)
   expect(d.windows[0].destroyed).toBe(true)
+})
+
+it('rechecks Accessibility and clears the startup warning after permission is granted', async () => {
+  const permission = { granted: false }
+  const d = await desktop({ permission, shortcut: DOUBLE_SHIFT_SHORTCUT })
+  const window = await d.loaded()
+  await expect(d.invoke(window, channels.state, undefined)).resolves.toHaveProperty(
+    'shortcutError',
+    expect.stringContaining('Accessibility'),
+  )
+  permission.granted = true
+  await expect(d.invoke(window, channels.state, undefined)).resolves.toHaveProperty(
+    'shortcutError',
+    null,
+  )
+  const attempts = d.startDoubleShift.mock.calls.length
+  await d.invoke(window, channels.state, undefined)
+  expect(d.startDoubleShift).toHaveBeenCalledTimes(attempts)
+})
+
+it('reports revoked access and clears the warning when an existing monitor becomes trusted again', async () => {
+  const permission = { granted: true }
+  const d = await desktop({ permission, shortcut: DOUBLE_SHIFT_SHORTCUT })
+  const window = await d.loaded()
+  await expect(d.invoke(window, channels.state, undefined)).resolves.toHaveProperty(
+    'shortcutError',
+    null,
+  )
+  permission.granted = false
+  await expect(d.invoke(window, channels.state, undefined)).resolves.toHaveProperty(
+    'shortcutError',
+    expect.stringContaining('Accessibility'),
+  )
+  permission.granted = true
+  await expect(d.invoke(window, channels.state, undefined)).resolves.toHaveProperty(
+    'shortcutError',
+    null,
+  )
 })
