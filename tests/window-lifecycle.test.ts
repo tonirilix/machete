@@ -15,7 +15,8 @@ afterEach(async () => {
 })
 
 // Execute the actual main entry point without starting Electron or taking focus.
-// Native window methods throw after destruction, just as Electron's methods do.
+// Native window methods throw after destruction. Tests deliver lifecycle events
+// explicitly; this fake does not implement Electron's quit or process-exit logic.
 async function desktop({
   ready = Promise.resolve(),
   load = async () => {},
@@ -118,17 +119,7 @@ async function desktop({
     requestSingleInstanceLock: () => true,
     whenReady: () => ready,
     isHidden: () => false,
-    exited: false,
-    quit: vi.fn(() => {
-      const quit = event()
-      app.emit('before-quit', quit)
-      if (quit.defaultPrevented) return
-      for (const window of windows.filter((window) => !window.destroyed)) window.close()
-      if (windows.some((window) => !window.destroyed)) return
-      app.emit('will-quit', event())
-      app.exited = true
-      app.emit('quit')
-    }),
+    quit: vi.fn(),
   })
   const image = {
     setTemplateImage() {},
@@ -186,7 +177,23 @@ async function desktop({
     await vi.waitFor(() => expect(windows.at(-1)?.visible).toBe(true))
     return windows.at(-1)!
   }
-  return { app, windows, trays, dialog, globalShortcut, invoke, loaded, main, startDoubleShift }
+  const requestQuit = () => {
+    const quit = event()
+    app.emit('before-quit', quit)
+    return quit
+  }
+  return {
+    app,
+    windows,
+    trays,
+    dialog,
+    globalShortcut,
+    invoke,
+    loaded,
+    main,
+    startDoubleShift,
+    requestQuit,
+  }
 }
 
 it('handles Dock activation after the native window has been destroyed', async () => {
@@ -213,7 +220,7 @@ it('hides a closed window and reuses it for tray and second-instance opens', asy
   d.app.emit('second-instance')
   await d.loaded()
   expect(d.windows).toHaveLength(1)
-  expect(d.app.exited).toBe(false)
+  expect(d.app.quit).not.toHaveBeenCalled()
 })
 
 it('recreates one window for overlapping tray and Dock opens and rejects the old renderer', async () => {
@@ -262,32 +269,35 @@ it('can capture into a replacement window', async () => {
   )
 })
 
-it('drains once, ignores reopen events during quit, and removes the tray before closing', async () => {
+it('drains once, ignores reopen events during quit, and then lets Electron close the window', async () => {
   const d = await desktop()
   const window = await d.loaded()
   const tray = d.trays[0]
   const registrationId = crypto.randomUUID()
   await d.invoke(window, channels.draftDrainRegistration, { registrationId, active: true })
   window.focus.mockClear()
-  d.app.quit()
-  d.app.quit()
+  d.requestQuit()
+  d.requestQuit()
   d.app.emit('activate')
   d.app.emit('second-instance')
   tray.emit('click')
   await Promise.resolve()
   expect(window.focus).not.toHaveBeenCalled()
-  expect(d.app.exited).toBe(false)
+  expect(d.app.quit).not.toHaveBeenCalled()
   const drains = window.webContents.send.mock.calls.filter(
     ([channel]) => channel === channels.draftDrainRequested,
   )
   expect(drains).toHaveLength(1)
   window.on('closed', () => {
-    expect(tray.destroyed).toBe(true)
     expect(() => d.app.emit('activate')).not.toThrow()
     tray.emit('click')
   })
   await d.invoke(window, channels.draftDrainCompleted, drains[0][1])
-  await vi.waitFor(() => expect(d.app.exited).toBe(true))
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
+  expect(d.requestQuit().defaultPrevented).toBe(false)
+  window.close()
+  d.app.emit('will-quit')
+  expect(tray.destroyed).toBe(true)
   expect(d.windows).toHaveLength(1)
   expect(window.destroyed).toBe(true)
   expect(d.globalShortcut.unregisterAll).toHaveBeenCalledOnce()
@@ -302,7 +312,7 @@ it('keeps the app usable when flushing a draft fails, then allows another quit',
     active: true,
   })
   window.hide()
-  d.app.quit()
+  d.requestQuit()
   const request = window.webContents.send.mock.calls.find(
     ([channel]) => channel === channels.draftDrainRequested,
   )![1]
@@ -310,15 +320,15 @@ it('keeps the app usable when flushing a draft fails, then allows another quit',
   await vi.waitFor(() =>
     expect(d.dialog.showErrorBox).toHaveBeenCalledWith('Machete', 'Disk is full'),
   )
-  expect(d.app.exited).toBe(false)
+  expect(d.app.quit).not.toHaveBeenCalled()
   expect(window.visible).toBe(true)
   expect(d.trays[0].destroyed).toBe(false)
-  d.app.quit()
+  d.requestQuit()
   const requests = window.webContents.send.mock.calls.filter(
     ([channel]) => channel === channels.draftDrainRequested,
   )
   await d.invoke(window, channels.draftDrainCompleted, requests[1][1])
-  await vi.waitFor(() => expect(d.app.exited).toBe(true))
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
 })
 
 it('drops a destroyed editor registration so quitting does not wait on a dead renderer', async () => {
@@ -329,13 +339,14 @@ it('drops a destroyed editor registration so quitting does not wait on a dead re
     active: true,
   })
   window.destroy()
-  d.app.quit()
-  await vi.waitFor(() => expect(d.app.exited).toBe(true))
+  d.requestQuit()
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
   expect(
     window.webContents.send.mock.calls.some(
       ([channel]) => channel === channels.draftDrainRequested,
     ),
   ).toBe(false)
+  d.app.emit('will-quit')
   expect(d.trays[0].destroyed).toBe(true)
 })
 
@@ -346,17 +357,17 @@ it('recovers if the window is destroyed while a draft flush is pending', async (
     registrationId: crypto.randomUUID(),
     active: true,
   })
-  d.app.quit()
+  d.requestQuit()
   window.destroy()
   await vi.waitFor(() => expect(d.windows).toHaveLength(2))
   await d.loaded()
-  expect(d.app.exited).toBe(false)
+  expect(d.app.quit).not.toHaveBeenCalled()
   expect(d.dialog.showErrorBox).toHaveBeenCalledWith(
     'Machete',
     expect.stringContaining('disconnected'),
   )
-  d.app.quit()
-  await vi.waitFor(() => expect(d.app.exited).toBe(true))
+  d.requestQuit()
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
 })
 
 it('does not create a window or tray when quit precedes app readiness', async () => {
@@ -366,8 +377,8 @@ it('does not create a window or tray when quit precedes app readiness', async ()
       resolve = done
     }),
   })
-  d.app.quit()
-  expect(d.app.exited).toBe(true)
+  d.requestQuit()
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
   resolve()
   await new Promise((done) => setTimeout(done, 10))
   expect(d.windows).toHaveLength(0)
@@ -385,8 +396,11 @@ it('quits during initial page loading without a startup error or replacement win
   })
   await vi.waitFor(() => expect(d.windows).toHaveLength(1))
   d.windows[0].on('closed', () => reject(new Error('ERR_ABORTED')))
-  d.app.quit()
-  await vi.waitFor(() => expect(d.app.exited).toBe(true))
+  d.requestQuit()
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
+  d.windows[0].close()
+  d.app.emit('will-quit')
+  await Promise.resolve()
   expect(d.windows).toHaveLength(1)
   expect(d.trays[0].destroyed).toBe(true)
   expect(d.dialog.showErrorBox).not.toHaveBeenCalled()
@@ -405,15 +419,15 @@ it('waits for in-flight native capture cleanup without allowing shutdown reactiv
   const capture = d.main.captureSelectionAndShow()
   await vi.waitFor(() => expect(selection).toHaveBeenCalledOnce())
   window.focus.mockClear()
-  d.app.quit()
-  await vi.waitFor(() => expect(d.trays[0].destroyed).toBe(true))
+  d.requestQuit()
+  await vi.waitFor(() => expect(d.globalShortcut.unregister).toHaveBeenCalledOnce())
   d.app.emit('activate')
   d.trays[0].emit('click')
-  expect(d.app.exited).toBe(false)
+  expect(d.app.quit).not.toHaveBeenCalled()
   expect(window.focus).not.toHaveBeenCalled()
   finish({ status: 'captured', text: 'selection after cleanup' })
   await capture
-  await vi.waitFor(() => expect(d.app.exited).toBe(true))
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
   expect(d.windows).toHaveLength(1)
 })
 
@@ -435,13 +449,13 @@ it('drains native capture even if shortcut teardown throws, then finishes quitti
     d.globalShortcut.unregister.mockImplementationOnce(() => {
       throw error
     })
-    d.app.quit()
+    d.requestQuit()
     await vi.waitFor(() => expect(d.globalShortcut.unregister).toHaveBeenCalledOnce())
-    expect(d.app.exited).toBe(false)
-    expect(d.trays[0].destroyed).toBe(true)
+    expect(d.app.quit).not.toHaveBeenCalled()
+    expect(d.trays[0].destroyed).toBe(false)
     finish({ status: 'no-selection', text: '' })
     await capture
-    await vi.waitFor(() => expect(d.app.exited).toBe(true))
+    await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
     expect(log).toHaveBeenCalledWith('Could not finish shutdown:', error)
     expect(d.dialog.showErrorBox).not.toHaveBeenCalled()
   } finally {
@@ -455,11 +469,12 @@ it('reports a genuine initial load failure once and cleans up the app', async ()
       throw new Error('Renderer file is missing')
     },
   })
-  await vi.waitFor(() => expect(d.app.exited).toBe(true))
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
   expect(d.dialog.showErrorBox).toHaveBeenCalledExactlyOnceWith(
     'Machete',
     'Renderer file is missing',
   )
+  d.app.emit('will-quit')
   expect(d.trays[0].destroyed).toBe(true)
   expect(d.windows[0].destroyed).toBe(true)
 })

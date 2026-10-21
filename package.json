@@ -43,8 +43,7 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "identity": "-",
-      "hardenedRuntime": false
+      "identity": null
     },
     "linux": {
       "category": "Utility"

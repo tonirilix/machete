@@ -80,24 +80,15 @@ function report(error: unknown) {
   dialog.showErrorBox('Machete', error instanceof Error ? error.message : 'Something went wrong.')
 }
 
-function liveWindow() {
-  return window && !window.isDestroyed() ? window : null
-}
-
 function requireWindow() {
-  const current = liveWindow()
+  const current = window
   if (!current) throw new Error('The app window is no longer available.')
   return current
 }
 
 async function readyToPresent() {
   await startup
-  while (quitPhase === 'running') {
-    if (!liveWindow()) createWindow()
-    const current = window
-    await windowReady
-    if (current === liveWindow()) return
-  }
+  if (quitPhase === 'running') await (window ? windowReady : createWindow())
 }
 
 async function show(mode: OpenRequest['mode'], notice?: string) {
@@ -107,7 +98,7 @@ async function show(mode: OpenRequest['mode'], notice?: string) {
 
 function present(mode: OpenRequest['mode'], notice?: string) {
   if (quitPhase !== 'running') return
-  const current = liveWindow()
+  const current = window
   if (!current) return
   if (current.isMinimized()) current.restore()
   current.show()
@@ -123,24 +114,36 @@ function browse() {
   if (quitPhase === 'running') void show('browse').catch(report)
 }
 
-function destroyTray() {
-  if (tray && !tray.isDestroyed()) tray.destroy()
-  tray = null
-}
-
-async function finishQuit() {
-  quitPhase = 'quitting'
-  destroyTray()
+async function prepareToQuit() {
+  if (quitPhase !== 'running') return
+  quitPhase = 'draining'
   try {
-    // Run both cleanups even if one throws synchronously; native Copy still
-    // needs to restore the clipboard before Electron can exit.
+    await draftQuit.drain()
+  } catch (error) {
+    quitPhase = 'running'
+    if (window) {
+      window.webContents.send(channels.draftDrainCancelled)
+      window.show()
+    } else {
+      browse()
+    }
+    report(error)
+    return
+  }
+  quitPhase = 'quitting'
+  try {
+    // Both cleanups must settle so native Copy can restore the clipboard even
+    // if another cleanup throws. Electron closes the window after we resume quit.
     const results = await Promise.allSettled([
       Promise.resolve().then(() => shortcuts?.stop()),
       Promise.resolve().then(() => captures?.stop()),
     ])
     await store?.whenIdle()
-    const failure = results.find((result) => result.status === 'rejected')
-    if (failure?.status === 'rejected') throw failure.reason
+    for (const result of results) {
+      if (result.status === 'rejected') console.error('Could not finish shutdown:', result.reason)
+    }
+  } catch (error) {
+    console.error('Could not finish shutdown:', error)
   } finally {
     app.quit()
   }
@@ -159,7 +162,7 @@ async function refreshSelectionAccess() {
 
 function handle(channel: string, handler: (payload: unknown) => unknown) {
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, payload: unknown) => {
-    const current = liveWindow()
+    const current = window
     if (
       !current ||
       event.sender !== current.webContents ||
@@ -243,7 +246,7 @@ function installHandlers() {
       .parse(payload)
     await clipboard.writeText(text)
   })
-  handle(channels.hide, () => liveWindow()?.hide())
+  handle(channels.hide, () => window?.hide())
   handle(channels.export, async () => {
     await store.whenIdle()
     const { canceled, filePath } = await dialog.showSaveDialog(requireWindow(), {
@@ -416,7 +419,7 @@ if (hasLock) {
   app.on('second-instance', browse)
   app.on('activate', () => {
     if (quitPhase !== 'running') return
-    const current = liveWindow()
+    const current = window
     // Focusing our own capture window also activates the app. Preserve its mode.
     if (current?.isVisible() && !current.isMinimized() && !app.isHidden()) {
       current.focus()
@@ -427,41 +430,18 @@ if (hasLock) {
   app.on('window-all-closed', () => {})
   app.on('before-quit', (event) => {
     if (quitPhase === 'quitting') return
-    if (!store) {
-      quitPhase = 'quitting'
-      return
-    }
     event.preventDefault()
-    if (quitPhase === 'draining') return
-    quitPhase = 'draining'
-    void (async () => {
-      try {
-        await draftQuit.drain()
-      } catch (error) {
-        if (quitPhase !== 'draining') return
-        quitPhase = 'running'
-        const current = liveWindow()
-        if (current) {
-          current.webContents.send(channels.draftDrainCancelled)
-          current.show()
-        } else {
-          browse()
-        }
-        report(error)
-        return
-      }
-      await finishQuit()
-    })().catch((error) => console.error('Could not finish shutdown:', error))
+    void prepareToQuit()
   })
   app.on('will-quit', () => {
-    quitPhase = 'quitting'
-    destroyTray()
+    tray?.destroy()
+    tray = null
     globalShortcut.unregisterAll()
   })
   startup = start().catch((error) => {
     if (quitPhase === 'quitting') return
     report(error)
-    void finishQuit().catch((error) => console.error('Could not finish shutdown:', error))
+    void prepareToQuit()
   })
   if (!process.argv.includes('--hidden')) browse()
 }
