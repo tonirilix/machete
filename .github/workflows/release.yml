@@ -1,0 +1,172 @@
+name: Build macOS release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    # Keep the workflow within free public-repository runner usage.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Resolve release version
+        id: metadata
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs'
+          const { version: current } = JSON.parse(readFileSync('package.json', 'utf8'))
+          const tagged = process.env.RELEASE_EVENT === 'push'
+          if (tagged && process.env.GITHUB_REF_NAME !== `v${current}`) {
+            throw new Error('The version tag must match package.json (v' + current + ').')
+          }
+          const version = tagged ? current : `${current.split(/[+-]/)[0]}-dev.${process.env.GITHUB_RUN_ID}`
+          const tag = tagged ? process.env.GITHUB_REF_NAME : `build-${process.env.GITHUB_RUN_ID}`
+          appendFileSync(process.env.GITHUB_OUTPUT,
+            `tag=${tag}\nversion=${version}\nprerelease=${!tagged || version.includes('-')}\n`)
+          JS
+      - name: Create or resume a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+        run: |
+          if gh release view "$TAG" --json isDraft,targetCommitish > release.json; then
+            jq -e --arg sha "$GITHUB_SHA" '.isDraft and .targetCommitish == $sha' release.json
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+              --title "Machete $VERSION" --prerelease="$PRERELEASE" --latest=false \
+              --notes-file .github/release-notes.md
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+            mach_arch: x86_64
+            app_dir: mac
+          - runner: macos-15
+            arch: arm64
+            mach_arch: arm64
+            app_dir: mac-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Verify native runner architecture
+        run: test "$(node -p 'process.arch')" = "$ARCH"
+      - run: npm ci
+      - name: Set the build version
+        run: npm version "$VERSION" --no-git-tag-version --ignore-scripts --allow-same-version
+      - run: npm test
+      - run: npm run test:native
+      - name: Build DMG and ZIP
+        run: npm run dist:mac -- --"$ARCH"
+      - name: Verify the packaged app
+        env:
+          APP_DIR: ${{ matrix.app_dir }}
+          MACH_ARCH: ${{ matrix.mach_arch }}
+        run: |
+          app="release/$APP_DIR/Machete.app"
+          codesign --verify --deep --strict "$app"
+          lipo "$app/Contents/MacOS/Machete" -verify_arch "$MACH_ARCH"
+          lipo "$app/Contents/Resources/app.asar.unpacked/resources/selection.node" -verify_arch "$MACH_ARCH"
+      - name: Checksum installers
+        working-directory: release
+        run: shasum -a 256 "Machete-$VERSION-$ARCH.dmg" "Machete-$VERSION-$ARCH.zip" > "Machete-$VERSION-$ARCH.sha256"
+      # Upload directly to the draft; no Actions artifacts or caches are retained.
+      - name: Upload installers to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release view "$TAG" --json isDraft,targetCommitish | \
+            jq -e --arg sha "$GITHUB_SHA" '.isDraft and .targetCommitish == $sha'
+          gh release upload "$TAG" \
+            "release/Machete-$VERSION-$ARCH.dmg" \
+            "release/Machete-$VERSION-$ARCH.zip" \
+            "release/Machete-$VERSION-$ARCH.sha256" --clobber
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - name: Verify all downloads are present
+        run: |
+          gh release view "$TAG" --json assets,isDraft,targetCommitish > release.json
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs'
+          const release = JSON.parse(readFileSync('release.json', 'utf8'))
+          if (!release.isDraft || release.targetCommitish !== process.env.GITHUB_SHA) {
+            throw new Error('Only this commit’s draft release can be published.')
+          }
+          for (const arch of ['x64', 'arm64']) {
+            for (const ext of ['dmg', 'zip', 'sha256']) {
+              const name = `Machete-${process.env.VERSION}-${arch}.${ext}`
+              if (!release.assets.some(asset => asset.name === name && asset.size > 0)) {
+                throw new Error(`Missing or empty release asset: ${name}`)
+              }
+            }
+          }
+          JS
+      - name: Publish the complete release
+        run: |
+          if [ "$PRERELEASE" = true ]; then
+            gh release edit "$TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" --draft=false --prerelease=false --latest
+          fi
+          printf '### Downloads\nhttps://github.com/%s/releases/tag/%s\n' "$GH_REPO" "$TAG" >> "$GITHUB_STEP_SUMMARY"
