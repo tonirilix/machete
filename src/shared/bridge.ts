@@ -9,7 +9,7 @@ export interface Snapshot {
 }
 
 export interface OpenRequest {
-  mode: 'browse' | 'capture' | 'settings'
+  mode: 'browse' | 'capture' | 'settings' | 'saved'
   snapshot: Snapshot
   notice?: string
 }

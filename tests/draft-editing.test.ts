@@ -56,6 +56,20 @@ async function harness(
 }
 
 describe('DraftEditing', () => {
+  it('keeps unsent typing when a quick capture advances the collection revision', async () => {
+    const h = await harness()
+    h.editing.change({ text: 'latest manual typing', boardId: 'inbox' })
+    await h.store.execute({ type: 'save-capture', text: 'independent selection' })
+    h.editing.receive(h.snapshot())
+    expect(h.editing.getState().draft?.text).toBe('latest manual typing')
+    await h.commit(0)
+    expect(h.calls[0].result?.accepted).toBe(false)
+    await h.commit(1)
+    await h.editing.whenIdle()
+    expect(h.store.getState().draft?.text).toBe('latest manual typing')
+    expect(h.store.getState().clips.map((clip) => clip.text)).toEqual(['independent selection'])
+  })
+
   it('keeps latest typing and captures when an older acknowledgement arrives last', async () => {
     const h = await harness()
     h.editing.change({ text: 'first edit', boardId: 'inbox' })

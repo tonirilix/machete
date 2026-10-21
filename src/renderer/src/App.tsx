@@ -113,6 +113,11 @@ export function App() {
       acceptSnapshot(request.snapshot)
       setMode({ type: request.mode === 'capture' ? 'capture' : 'browse' })
       setSettings(request.mode === 'settings')
+      if (request.mode === 'saved') {
+        setActive(INBOX_ID)
+        setQuery('')
+        toast.success('Selection saved to Inbox.', { id: 'capture-notice' })
+      }
       if (request.notice) toast.error(request.notice, { id: 'capture-notice' })
       setSelected([])
     })

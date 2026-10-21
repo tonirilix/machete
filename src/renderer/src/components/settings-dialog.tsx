@@ -185,11 +185,11 @@ export function SettingsDialog({
             </h2>
             <p className="text-xs leading-5 text-muted-foreground">
               {access.granted
-                ? 'Enabled. Select text in another app and press your capture shortcut. New selections append to your unfinished note.'
+                ? 'Enabled. Select text in another app and press your capture shortcut. Each selection is saved as a new clip in Inbox.'
                 : 'Allow Machete in System Settings → Privacy & Security → Accessibility. Then select text in another app and press your capture shortcut.'}
             </p>
             <p className="text-[11px] leading-5 text-muted-foreground">
-              Reads selections only when you invoke capture. You choose when to save.
+              Reads and saves selections only when you invoke capture. Manual drafts stay separate.
             </p>
             {!access.granted && (
               <Button

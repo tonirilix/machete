@@ -91,6 +91,15 @@ export class CaptureController {
       const text = result.status === 'captured' ? result.text : ''
       const notice = result.status === 'captured' ? undefined : selectionNotice(result.status)
       if (text.length > MAX_CLIP_LENGTH) throw new Error('The copied text is too large to capture.')
+      if (source === 'selection') {
+        if (result.status !== 'captured' || !text.trim()) {
+          if (present) await this.show('browse', notice ?? selectionNotice('no-selection'))
+          return
+        }
+        await this.store.execute({ type: 'save-capture', text })
+        if (present) await this.show('saved')
+        return
+      }
       await this.store.execute({ type: text.length ? 'append-capture' : 'begin-capture', text })
       if (present) await this.show('capture', notice)
     } catch (error) {
@@ -120,7 +129,7 @@ function selectionNotice(status: SelectionResult['status']): string {
     case 'clipboard-busy':
       return 'The clipboard changed during capture. Please try again.'
     case 'restore-failed':
-      return 'The previous clipboard could not be restored after Copy. Your draft is unchanged.'
+      return 'The previous clipboard could not be restored after Copy. No clip was saved.'
     default:
       return 'Could not read the selected text. Copy it yourself and use Capture clipboard.'
   }

@@ -259,10 +259,11 @@ it('can capture into a replacement window', async () => {
   expect(replacement.webContents.send).toHaveBeenCalledWith(
     channels.openRequested,
     expect.objectContaining({
-      mode: 'capture',
+      mode: 'saved',
       snapshot: expect.objectContaining({
         library: expect.objectContaining({
-          draft: expect.objectContaining({ text: 'selected text' }),
+          clips: [expect.objectContaining({ text: 'selected text', boardId: 'inbox' })],
+          draft: null,
         }),
       }),
     }),
