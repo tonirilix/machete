@@ -108,31 +108,36 @@ try {
   const first = '  selected α 👋\n\tline two\n'
   await openFixture('direct', first)
   await capture()
-  assert.equal((await current()).library.draft.text, first)
-  assert.equal((await current()).library.clips.length, 0)
+  assert.equal((await current()).library.draft, null)
+  assert.equal((await current()).library.clips[0].text, first)
+  assert.equal((await current()).library.clips.length, 1)
   await delay(300)
-  assert.equal(await renderer('document.querySelector("textarea")?.value'), first)
-  console.log('PASS: native selected text reaches the editor verbatim, once, without saving a clip')
+  assert.equal(await renderer('document.querySelector("textarea")'), null)
+  console.log('PASS: native selection saves once, verbatim, without opening an editor')
 
   await renderer('window.machete.execute({type:"create-board",name:"Selection test"})')
   const boardId = (await current()).library.boards[1].id
+  await renderer('window.machete.execute({type:"begin-capture",text:""})')
   await renderer(
     `window.machete.execute(${JSON.stringify({ type: 'update-draft', text: first, boardId })})`,
   )
   await openFixture('direct', 'second selection')
   await capture()
-  let expected = first + '\n\nsecond selection'
+  const expected = first
   assert.equal((await current()).library.draft.text, expected)
   assert.equal((await current()).library.draft.boardId, boardId)
+  assert.equal((await current()).library.clips[0].text, 'second selection')
+  assert.equal((await current()).library.clips[0].boardId, 'inbox')
+  assert.equal((await current()).library.clips.length, 2)
   await delay(300)
-  assert.equal(await renderer('document.querySelector("textarea")?.value'), expected)
-  console.log('PASS: another selection appends to the same draft and refreshes its editor')
+  assert.equal(await renderer('document.querySelector("textarea")'), null)
+  console.log('PASS: another selection saves separately and preserves the manual draft and board')
 
   const before = await inspector.evaluate(`(${clipboardFingerprint})()`)
   await openFixture('fallback', 'copied fallback selection')
   await capture()
-  expected += '\n\ncopied fallback selection'
   assert.equal((await current()).library.draft.text, expected)
+  assert.equal((await current()).library.clips[0].text, 'copied fallback selection')
   assert.equal(
     await inspector.evaluate(`(${clipboardFingerprint})()`),
     before,
@@ -143,7 +148,7 @@ try {
   await openFixture('empty', 'nothing selected here')
   await capture()
   assert.equal((await current()).library.draft.text, expected)
-  assert.equal((await current()).library.clips.length, 0)
+  assert.equal((await current()).library.clips.length, 3)
   console.log(
     'PASS: no selection leaves the existing draft intact and never inserts stale clipboard text',
   )
@@ -153,7 +158,7 @@ try {
   )
   const saved = JSON.parse(await readFile(join(dataPath, 'collection.json'), 'utf8'))
   assert.equal(saved.clips[0].text, expected)
-  assert.equal(saved.clips.length, 1)
+  assert.equal(saved.clips.length, 4)
   assert.equal(saved.draft, null)
   console.log('PASS: explicit save persists exactly one clip in the selected board')
 
@@ -188,6 +193,7 @@ try {
   await shift()
   await delay(500)
   assert.equal((await current()).library.draft, null)
+  assert.equal((await current()).library.clips.length, 4)
   await key(56, true, (1 << 17) | 2)
   try {
     await key(0, true, (1 << 17) | 2)
@@ -198,6 +204,7 @@ try {
   await shift()
   await delay(500)
   assert.equal((await current()).library.draft, null)
+  assert.equal((await current()).library.clips.length, 4)
   console.log('PASS: holding Shift and using Shift while typing do not trigger capture')
 
   // Reopen the fixture to reset the selection changed by the typing test.
@@ -206,22 +213,24 @@ try {
   await shift()
   await until(
     current,
-    (state) => state.library.draft?.text === 'captured by double Shift',
+    (state) => state.library.clips[0]?.text === 'captured by double Shift',
     'Double Shift did not capture the selection',
   )
-  assert.equal((await current()).library.clips.length, 1)
-  console.log('PASS: actual global double Shift events capture selected text without saving')
+  assert.equal((await current()).library.clips.length, 5)
+  assert.equal((await current()).library.draft, null)
+  console.log('PASS: actual global double Shift events save selected text immediately')
 
   await openFixture('direct', 'right Shift selection')
   await shift(60)
   await shift(60)
-  const appended = 'captured by double Shift\n\nright Shift selection'
   await until(
     current,
-    (state) => state.library.draft?.text === appended,
-    'Right Shift did not append the selection',
+    (state) => state.library.clips[0]?.text === 'right Shift selection',
+    'Right Shift did not save the selection',
   )
-  console.log('PASS: right Shift also captures and appends to the existing draft')
+  assert.equal((await current()).library.clips.length, 6)
+  assert.equal((await current()).library.draft, null)
+  console.log('PASS: right Shift saves another independent clip')
 
   await renderer(
     `window.machete.execute(${JSON.stringify({ type: 'set-shortcut', shortcut: conventional })})`,
@@ -230,7 +239,8 @@ try {
   await shift()
   await shift()
   await delay(500)
-  assert.equal((await current()).library.draft.text, appended)
+  assert.equal((await current()).library.draft, null)
+  assert.equal((await current()).library.clips.length, 6)
   assert.equal(
     await inspector.evaluate(
       `${electron}.globalShortcut.isRegistered(${JSON.stringify(conventional)})`,

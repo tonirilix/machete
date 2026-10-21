@@ -18,17 +18,20 @@ MVP and requested shadcn/ui components for the Electron renderer.
 - Save clips deliberately. On macOS, read the source app's selected text before
   taking focus. Use Accessibility and a clipboard-preserving Copy fallback;
   see [ADR 0003](adr/0003-macos-selection-capture.md). Clipboard capture remains
-  available explicitly, and manual entry uses the same editor.
-- Cmd+Shift+Space opens capture. The shortcut is configurable, and a registration
-  conflict is visible to the user.
-- Start each new capture in Inbox, with a board selector before saving.
-- Preview or edit before explicitly saving. Enter inserts a newline; Cmd+Enter
-  saves. Preserve whitespace in multiline text and code.
+  available explicitly inside the manual draft editor.
+- Double Shift or the configured capture shortcut saves each successful selection
+  as a new clip in Inbox and shows the library. No intermediate editor is needed.
+  A registration conflict is visible to the user.
+- New clip starts a manual draft in Inbox, with a board selector before saving.
+  The same button becomes Resume draft while an unfinished draft exists.
+- Manual drafts can be edited before saving. Enter inserts a newline; Cmd+Enter
+  saves. Preserve whitespace in multiline text and code in both capture paths.
 - Keep one unfinished draft separate from saved clips. It survives hiding and
-  restart. Successful selection or clipboard captures append with a blank line,
-  preserving the draft's board. Manual entry resumes it. Provide an explicit
-  Discard action. Failed selection capture leaves existing content intact and
-  explains the failure; it never substitutes stale clipboard content.
+  restart. Append clipboard inside the editor adds text with a blank line,
+  preserving the draft's board. Shortcut captures always create separate clips
+  and leave that draft intact. Provide an explicit Discard action. Empty or failed
+  selection capture saves nothing and explains the failure; it never substitutes
+  stale clipboard content.
 
 ## Library and reuse
 

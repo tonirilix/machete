@@ -390,7 +390,7 @@ async function start() {
   const trayMenu = Menu.buildFromTemplate([
     { label: 'Open Machete', click: browse },
     {
-      label: 'Capture clipboard',
+      label: 'Append clipboard to draft',
       click: () => {
         if (quitPhase === 'running') void captures.request('clipboard').catch(report)
       },

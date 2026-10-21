@@ -3,12 +3,10 @@ import {
   AlertCircle,
   ArrowRight,
   Check,
-  ClipboardPlus,
   Copy,
   Inbox,
   Layers2,
   LoaderCircle,
-  Plus,
   Search,
   SearchX,
   Trash2,
@@ -113,6 +111,11 @@ export function App() {
       acceptSnapshot(request.snapshot)
       setMode({ type: request.mode === 'capture' ? 'capture' : 'browse' })
       setSettings(request.mode === 'settings')
+      if (request.mode === 'saved') {
+        setActive(INBOX_ID)
+        setQuery('')
+        toast.success('Selection saved to Inbox.', { id: 'capture-notice' })
+      }
       if (request.notice) toast.error(request.notice, { id: 'capture-notice' })
       setSelected([])
     })
@@ -155,6 +158,7 @@ export function App() {
 
   async function capture(fromClipboard = false) {
     try {
+      if (fromClipboard) await draftEditing.whenIdle()
       acceptSnapshot(await bridge.capture(fromClipboard))
       setMode({ type: 'capture' })
       setSelected([])
@@ -375,6 +379,7 @@ export function App() {
             <DraftEditor
               editing={draftEditing}
               boards={state.boards}
+              onAppendClipboard={() => capture(true)}
               onBack={() => setMode({ type: 'browse' })}
               onSaved={(draft) => {
                 navigate(draft.boardId)
@@ -405,7 +410,7 @@ export function App() {
                         : 'The good bits, all in one place.'}
                     </p>
                   </div>
-                  {isTrashed ? (
+                  {isTrashed && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -422,12 +427,6 @@ export function App() {
                     >
                       <Trash2 />
                       Empty Trash
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" onClick={() => void capture(true)}>
-                      <ClipboardPlus />
-                      <span className="hidden min-[650px]:inline">Capture clipboard</span>
-                      <span className="min-[650px]:hidden">Capture</span>
                     </Button>
                   )}
                 </div>
@@ -516,16 +515,11 @@ export function App() {
                           : 'A useful command. A link for later. A thought you don’t want to lose.'}
                     </p>
                     {!query && !isTrashed && (
-                      <Button
-                        variant="outline"
-                        className="mt-6"
-                        size="sm"
-                        onClick={() => void capture()}
-                      >
-                        <Plus />
-                        Save your first clip
-                        <ArrowRight className="ml-1 size-3.5" />
-                      </Button>
+                      <p className="mt-6 text-xs text-muted-foreground">
+                        {state.draft
+                          ? 'Resume your draft from the sidebar.'
+                          : 'Start with New clip in the sidebar.'}
+                      </p>
                     )}
                   </div>
                 )}

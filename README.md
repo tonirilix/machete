@@ -19,8 +19,11 @@ On macOS it keeps a Dock icon as well as its menu bar icon.
 Right-click the menu bar icon to quit. New collections start with an empty Inbox.
 
 - **Cmd+Shift+Space:** capture selected text from another app on macOS; capture
-  copied text on other platforms. New captures append to an unfinished draft.
-- **Cmd+N:** write a clip manually.
+  copied text on other platforms. Each capture saves a separate clip in Inbox,
+  without opening an editor or changing your manual draft.
+- **New clip / Resume draft** or **Cmd+N:** compose a manual draft. Use **Append
+  clipboard** inside the editor to collect multiple pieces into that draft, then
+  save them as one clip. Shortcut captures always save separate clips.
 - **Enter:** insert a newline in the editor.
 - **Cmd+Enter:** save a clip.
 - **Cmd+K:** focus search while browsing.
@@ -41,7 +44,7 @@ and never records typed text.
 In Machete Settings, click **Enable selection capture**, then allow
 **Machete** under **Privacy & Security → Accessibility** in System Settings.
 Return to another app, select text, and press **Cmd+Shift+Space**. The selection
-appears in the editor; **Cmd+Enter** saves it. If permission does not update,
+is saved immediately as a new clip in Inbox. If permission does not update,
 quit and reopen Machete. Use the packaged app when granting permission;
 development mode runs under Electron's identity.
 Local macOS packages use an ad-hoc signature. Rebuilding changes the code identity
@@ -127,7 +130,7 @@ untouched. The native binary is built for the current architecture and unpacked
 beside the packaged app's resources.
 
 The selection check requires Accessibility permission for the packaged app. It
-briefly opens native test windows and checks selection capture, draft appending,
+briefly opens native test windows and checks immediate selection saving, draft preservation,
 the Copy fallback, clipboard restoration, and explicit saving. It uses a
 disposable collection, then reopens the app with your usual collection.
 

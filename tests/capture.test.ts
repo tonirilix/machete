@@ -37,9 +37,9 @@ describe('capture ownership', () => {
     expect(present).not.toHaveBeenCalled()
     read.resolve({ status: 'captured', text: '  verbatim\n' })
     await Promise.all([first, second])
-    expect(store.getState().draft?.text).toBe('  verbatim\n')
-    expect(store.getState().clips).toEqual([])
-    expect(present).toHaveBeenCalledExactlyOnceWith('capture', undefined)
+    expect(store.getState().draft).toBeNull()
+    expect(store.getState().clips.map((clip) => clip.text)).toEqual(['  verbatim\n'])
+    expect(present).toHaveBeenCalledExactlyOnceWith('saved', undefined)
   })
 
   it('reads a new selection before an older clipboard capture takes focus', async () => {
@@ -56,7 +56,8 @@ describe('capture ownership', () => {
     const selected = captures.request('selection')
     write.resolve(undefined)
     await Promise.all([clipboard, selected])
-    expect(store.getState().draft?.text).toBe('copied\n\nsource')
+    expect(store.getState().draft?.text).toBe('copied')
+    expect(store.getState().clips.map((clip) => clip.text)).toEqual(['source'])
   })
 
   it('waits for reads requested while presentation is waiting for startup', async () => {
@@ -94,7 +95,7 @@ describe('capture ownership', () => {
     selection.mockResolvedValue({ status: 'no-selection', text: '' })
     await captures.request('selection')
     expect(store.getState().draft).toEqual({ text: 'existing', boardId })
-    expect(present.mock.calls[0]).toEqual(['capture', expect.stringContaining('No selected text')])
+    expect(present.mock.calls[0]).toEqual(['browse', expect.stringContaining('No selected text')])
     await captures.request('clipboard', false)
     expect(store.getState().draft).toEqual({ text: 'existing\n\ncopied', boardId })
     expect(present).toHaveBeenCalledOnce()
@@ -110,8 +111,51 @@ describe('capture ownership', () => {
     expect(store.getState().draft).toBeNull()
     expect(present).toHaveBeenCalledExactlyOnceWith('browse', 'disk full')
     await captures.request('selection')
-    expect(store.getState().draft?.text).toBe('selected')
+    expect(store.getState().draft).toBeNull()
+    expect(store.getState().clips.map((clip) => clip.text)).toEqual(['selected'])
   })
+
+  it('saves successive shortcut captures separately without changing an existing manual draft', async () => {
+    const { captures, store, selection, present } = setup()
+    await store.execute({ type: 'begin-capture', text: 'manual draft' })
+    await captures.request('selection')
+    selection.mockResolvedValue({ status: 'captured', text: 'next selection' })
+    await captures.request('selection')
+    expect(store.getState().clips.map((clip) => clip.text)).toEqual(['next selection', 'selected'])
+    expect(store.getState().draft?.text).toBe('manual draft')
+    expect(present).toHaveBeenNthCalledWith(1, 'saved', undefined)
+    expect(present).toHaveBeenNthCalledWith(2, 'saved', undefined)
+  })
+
+  it.each(['', ' \n\t'])('does not save blank selected text or open a draft (%j)', async (text) => {
+    const { captures, store, selection, present } = setup()
+    selection.mockResolvedValue({ status: 'captured', text })
+    await captures.request('selection')
+    expect(store.getState().draft).toBeNull()
+    expect(store.getState().clips).toEqual([])
+    expect(present).toHaveBeenCalledWith('browse', expect.stringContaining('No selected text'))
+  })
+
+  it.each([
+    'source-changed',
+    'too-large',
+    'keys-held',
+    'clipboard-unavailable',
+    'clipboard-busy',
+    'restore-failed',
+    'no-selection',
+  ] as const)(
+    'leaves clips and the manual draft untouched when selection reports %s',
+    async (status) => {
+      const { captures, store, selection, present } = setup()
+      await store.execute({ type: 'begin-capture', text: 'manual draft' })
+      selection.mockResolvedValue({ status, text: '' })
+      await captures.request('selection')
+      expect(store.getState().draft?.text).toBe('manual draft')
+      expect(store.getState().clips).toEqual([])
+      expect(present).toHaveBeenCalledWith('browse', expect.any(String))
+    },
+  )
 
   it('propagates explicit clipboard failures without poisoning the capture queue', async () => {
     const { captures, clipboard, store } = setup()

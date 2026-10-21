@@ -91,6 +91,7 @@ const idsSchema = z.array(idSchema).min(1).max(100_000)
 export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('begin-capture'), text: textSchema }),
   z.object({ type: z.literal('append-capture'), text: textSchema.min(1) }),
+  z.object({ type: z.literal('save-capture'), text: savedTextSchema }),
   z.object({ type: z.literal('update-draft'), ...draftSchema.shape }),
   z.object({ type: z.literal('discard-draft') }),
   z.object({ type: z.literal('save-draft'), text: savedTextSchema, boardId: idSchema }),
@@ -155,7 +156,21 @@ export function applyCommand(
     return clips
   }
 
+  function saveClip(text: string, boardId: string) {
+    next.clips.unshift({
+      id: environment.id(),
+      text,
+      boardId,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    })
+  }
+
   switch (command.type) {
+    case 'save-capture':
+      saveClip(command.text, INBOX_ID)
+      break
     case 'begin-capture':
       next.draft ??= { text: command.text, boardId: INBOX_ID }
       break
@@ -174,14 +189,7 @@ export function applyCommand(
     case 'save-draft':
       if (!next.draft) throw new Error('This draft has already been saved or discarded.')
       requireBoard(command.boardId)
-      next.clips.unshift({
-        id: environment.id(),
-        text: command.text,
-        boardId: command.boardId,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-      })
+      saveClip(command.text, command.boardId)
       next.draft = null
       break
     case 'edit-clip': {
