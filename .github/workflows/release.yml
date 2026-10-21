@@ -112,8 +112,8 @@ jobs:
         run: |
           app="release/$APP_DIR/Machete.app"
           codesign --verify --deep --strict "$app"
-          lipo -verify_arch "$MACH_ARCH" "$app/Contents/MacOS/Machete"
-          lipo -verify_arch "$MACH_ARCH" "$app/Contents/Resources/app.asar.unpacked/resources/selection.node"
+          lipo "$app/Contents/MacOS/Machete" -verify_arch "$MACH_ARCH"
+          lipo "$app/Contents/Resources/app.asar.unpacked/resources/selection.node" -verify_arch "$MACH_ARCH"
       - name: Checksum installers
         working-directory: release
         run: shasum -a 256 "Machete-$VERSION-$ARCH.dmg" "Machete-$VERSION-$ARCH.zip" > "Machete-$VERSION-$ARCH.sha256"
