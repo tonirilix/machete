@@ -5,6 +5,20 @@ organize clips into boards; find and copy them when you need them again.
 
 Built for macOS with Electron, React, TypeScript, Tailwind CSS, and shadcn/ui.
 
+## Download
+
+Installers are available from [GitHub Releases](https://github.com/tonirilix/machete/releases)
+after a release build finishes. Choose `arm64.dmg` for Apple Silicon (M1 or later)
+or `x64.dmg` for Intel, open the disk image, and drag Machete into Applications.
+Quit an older copy before replacing it. ZIP downloads and SHA-256 checksums are
+also provided.
+
+The downloads are ad-hoc signed, not notarized by Apple. If macOS blocks the first
+launch and you trust the download, follow
+[Apple’s opening instructions](https://support.apple.com/en-us/102445).
+Selection capture still requires Accessibility permission; a new ad-hoc build can
+require permission again.
+
 ## Run
 
 Use Node.js 22.12+ and npm.
@@ -98,6 +112,7 @@ npm run test:native
 npm run test:desktop
 npm run build
 npm run pack
+npm run dist:mac
 npm run test:launch
 npm run test:selection
 ```
@@ -108,6 +123,34 @@ notarization, and automatic updates remain future distribution work.
 
 On macOS, open the packaged app with `open release/mac/Machete.app`.
 Running that command again brings the existing window forward.
+
+### Automated release builds
+
+After this workflow is merged into `main`, open **Actions → Build macOS release →
+Run workflow**, select a branch, and run it. This publishes a development
+prerelease named `build-<run-id>` with a unique `-dev.<run-id>` app version. It
+does not replace the latest stable release.
+
+For a versioned release, commit a version bump in both `package.json` and
+`package-lock.json` (for example, `npm version patch --no-git-tag-version`), then
+push a matching tag such as `v0.1.1`. Tags must exactly match `v<package version>`.
+Versions containing a prerelease suffix, such as `0.2.0-beta.1`, remain prereleases.
+
+The workflow runs tests, compiles the native module separately on standard Intel
+and Apple Silicon macOS runners, and creates a DMG and ZIP for each architecture.
+It checks signatures and architectures, then uploads the installers and checksums
+directly to a draft GitHub Release. Only after both builds pass is the release
+published. Failed runs leave an unpublished draft; rerunning resumes that draft.
+Published releases are never overwritten, and previous releases are retained.
+
+No Actions artifacts or dependency caches are uploaded. The workflow only runs
+for public repositories, where standard hosted runners are free. Downloads live
+in GitHub Releases, which has separate storage from the Actions artifact allowance.
+See [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+and [release limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
+Account billing budgets are managed separately in GitHub Settings; this workflow
+does not change them. No Apple signing credentials are required for these ad-hoc
+builds; Developer ID signing, notarization, and automatic app updates remain separate work.
 
 The macOS launch check requires a desktop session, Xcode Command Line Tools, and
 an existing packaged app. It checks five fresh launches without a debugger,

@@ -19,6 +19,7 @@
     "build": "npm run build:native && npm run typecheck && electron-vite build",
     "preview": "node scripts/desktop.mjs preview",
     "pack": "npm run build && electron-builder --dir",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --publish never",
     "format": "prettier --write ."
   },
   "engines": {
@@ -42,6 +43,7 @@
       "resources/*.node"
     ],
     "mac": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "category": "public.app-category.productivity",
       "identity": "-",
       "hardenedRuntime": false
