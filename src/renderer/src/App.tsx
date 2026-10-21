@@ -213,6 +213,7 @@ export function App() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
       if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')) return
       const target = event.target
       const typing =
@@ -234,7 +235,6 @@ export function App() {
         if (mode.type !== 'browse') setMode({ type: 'browse' })
         else if (selected.length) setSelected([])
         else if (query) setQuery('')
-        else void bridge.hide()
         return
       }
       if (typing || mode.type !== 'browse') return
