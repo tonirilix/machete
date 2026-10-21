@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   Trash2,
 } from 'lucide-react'
+import { DraftEditing } from '@/lib/draft-editing'
 import type { Board, Draft } from '../../../shared/library'
 import { MAX_CLIP_LENGTH } from '../../../shared/library'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,10 @@ interface Props {
   onSave: (draft: Draft) => Promise<void>
   onDiscard: () => Promise<void>
   onBack: () => void
+  value?: Draft
+  busy?: boolean
+  error?: string | null
+  onRetry?: () => void
 }
 
 export function ClipEditor({
@@ -37,9 +42,17 @@ export function ClipEditor({
   onSave,
   onDiscard,
   onBack,
+  value,
+  busy = false,
+  error,
+  onRetry,
 }: Props) {
-  const [text, setText] = useState(initial.text)
-  const [boardId, setBoardId] = useState(initial.boardId)
+  const [local, setLocal] = useState(initial)
+  const { text, boardId } = value ?? local
+  function change(draft: Draft) {
+    if (!value) setLocal(draft)
+    onChange(draft)
+  }
   const [saving, setSaving] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
 
@@ -51,7 +64,7 @@ export function ClipEditor({
   const actualBoard = boards.some((board) => board.id === boardId) ? boardId : 'inbox'
 
   async function save() {
-    if (saving || !text.trim()) return
+    if (saving || busy || !text.trim()) return
     setSaving(true)
     try {
       await onSave({ text, boardId: actualBoard })
@@ -86,10 +99,10 @@ export function ClipEditor({
             <FileText className="size-3.5" /> Plain text
           </span>
           <Select
+            disabled={busy || saving}
             value={actualBoard}
             onValueChange={(value) => {
-              setBoardId(value)
-              onChange({ text, boardId: value })
+              change({ text, boardId: value })
             }}
           >
             <SelectTrigger className="h-8 w-auto min-w-32 text-xs" aria-label="Save to board">
@@ -108,12 +121,12 @@ export function ClipEditor({
           ref={textarea}
           aria-label="Clip text"
           placeholder="Drop something useful here…"
+          disabled={busy || saving}
           value={text}
           maxLength={MAX_CLIP_LENGTH}
           className="min-h-56 flex-1 resize-none rounded-xl border-border/80 bg-card p-4 font-mono text-[13px] leading-7 shadow-none focus-visible:ring-2"
           onChange={(event) => {
-            setText(event.target.value)
-            onChange({ text: event.target.value, boardId: actualBoard })
+            change({ text: event.target.value, boardId: actualBoard })
           }}
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
@@ -133,14 +146,30 @@ export function ClipEditor({
           </span>
         </div>
       </div>
+      {error && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 px-6 pb-4 text-xs text-destructive"
+        >
+          <span>{error}</span>
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            Try again
+          </Button>
+        </div>
+      )}
       <footer className="flex items-center justify-between border-t bg-card/50 px-6 py-4">
-        <Button variant="ghost" size="sm" onClick={() => void onDiscard()} disabled={saving}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void onDiscard()}
+          disabled={saving || busy}
+        >
           {editing ? <ArrowLeft /> : <Trash2 />} {editing ? 'Cancel' : 'Discard draft'}
         </Button>
         <Button
           aria-label={editing ? 'Save changes' : 'Save clip'}
           onClick={() => void save()}
-          disabled={!text.trim() || saving}
+          disabled={!text.trim() || saving || busy}
         >
           {saving ? <LoaderCircle className="animate-spin" /> : <ArrowUpRight />}
           {editing ? 'Save changes' : 'Save clip'}
@@ -150,5 +179,42 @@ export function ClipEditor({
         </Button>
       </footer>
     </section>
+  )
+}
+
+export function DraftEditor({
+  editing,
+  boards,
+  onBack,
+  onSaved,
+  onDiscarded,
+}: {
+  editing: DraftEditing
+  boards: Board[]
+  onBack: () => void
+  onSaved: (draft: Draft) => void
+  onDiscarded: () => void
+}) {
+  const state = useSyncExternalStore(editing.subscribe, editing.getState)
+  if (!state.draft) return null
+  return (
+    <ClipEditor
+      initial={state.draft}
+      value={state.draft}
+      boards={boards}
+      editing={false}
+      busy={state.busy}
+      error={state.error}
+      onRetry={() => editing.retry()}
+      onChange={(draft) => editing.change(draft)}
+      onSave={async () => {
+        const saved = await editing.save()
+        if (saved && !editing.getState().draft) onSaved(saved)
+      }}
+      onDiscard={async () => {
+        if ((await editing.discard()) && !editing.getState().draft) onDiscarded()
+      }}
+      onBack={onBack}
+    />
   )
 }

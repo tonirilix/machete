@@ -21,16 +21,18 @@ import { channels, type OpenRequest, type Snapshot } from '../shared/bridge'
 import {
   backupSchema,
   commandSchema,
-  DOUBLE_SHIFT_SHORTCUT,
   exportBackup,
   MAX_CLIP_LENGTH,
+  draftSchema,
 } from '../shared/library'
 import { LibraryStore } from './store'
+import { DraftQuitDrain } from './draft-quit-drain'
+import { CaptureController } from './capture'
+import { ShortcutController } from './shortcuts'
 import {
   readSelection,
   requestSelectionAccess,
   selectionAccess,
-  selectionNotice,
   startDoubleShift,
   stopDoubleShift,
   isDoubleShiftRegistered,
@@ -53,15 +55,24 @@ let window: BrowserWindow
 let tray: Tray
 let store: LibraryStore
 let quitting = false
-let shortcutError: string | null = null
+let preparingQuit = false
+const draftQuit = new DraftQuitDrain((request) =>
+  window.webContents.send(channels.draftDrainRequested, request),
+)
 let startup: Promise<void>
-let selectionTask: Promise<void> | null = null
+let shortcuts: ShortcutController
+let captures: CaptureController
 
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) app.quit()
 
 function snapshot(): Snapshot {
-  return { library: store.getState(), shortcutError }
+  return {
+    library: store.getState(),
+    revision: store.getRevision(),
+    draftWriteId: store.getDraftWriteId(),
+    shortcutError: shortcuts.shortcutError,
+  }
 }
 
 function report(error: unknown) {
@@ -72,6 +83,10 @@ async function show(mode: OpenRequest['mode'], notice?: string) {
   // loadURL can resolve while isLoading() is still true, after did-finish-load
   // has already fired. Share startup's promise instead of waiting for that event again.
   await startup
+  present(mode, notice)
+}
+
+function present(mode: OpenRequest['mode'], notice?: string) {
   if (quitting) return
   if (window.isMinimized()) window.restore()
   window.show()
@@ -83,90 +98,14 @@ async function show(mode: OpenRequest['mode'], notice?: string) {
   } satisfies OpenRequest)
 }
 
-async function capture(fromClipboard: boolean): Promise<Snapshot> {
-  await store.whenIdle()
-  if (fromClipboard) {
-    const text = await clipboard.readText()
-    if (text.length > MAX_CLIP_LENGTH) throw new Error('The copied text is too large to capture.')
-    if (text.length) await store.execute({ type: 'append-capture', text })
-    else await store.execute({ type: 'begin-capture', text: '' })
-  } else {
-    await store.execute({ type: 'begin-capture', text: '' })
-  }
-  return snapshot()
+export function captureSelectionAndShow() {
+  if (preparingQuit || quitting) return Promise.resolve()
+  return captures.request('selection')
 }
 
-async function captureAndShow() {
-  try {
-    await capture(true)
-    await show('capture')
-  } catch (error) {
-    report(error)
-  }
-}
-
-export async function captureSelectionAndShow() {
-  if (quitting || selectionTask) return
-  selectionTask = (async () => {
-    try {
-      if (process.platform !== 'darwin') return await captureAndShow()
-      // Read before showing or focusing any Machete window.
-      const result = await readSelection()
-      if (quitting) return
-      if (result.status === 'permission-required') return await show('settings')
-      if (result.status === 'captured' && result.text.length) {
-        await store.execute({ type: 'append-capture', text: result.text })
-        await show('capture')
-      } else {
-        await capture(false)
-        await show('capture', selectionNotice(result.status))
-      }
-    } catch (error) {
-      if (!quitting) {
-        await show('browse', error instanceof Error ? error.message : 'Selection capture failed.')
-      }
-    }
-  })().finally(() => {
-    selectionTask = null
-  })
-  await selectionTask
-}
-
-function registerShortcut(accelerator: string): boolean {
-  try {
-    if (accelerator === DOUBLE_SHIFT_SHORTCUT) {
-      return startDoubleShift(() => {
-        if (!quitting && store.getState().settings.shortcut === DOUBLE_SHIFT_SHORTCUT) {
-          void captureSelectionAndShow()
-        }
-      })
-    }
-    return globalShortcut.register(accelerator, () => void captureSelectionAndShow())
-  } catch {
-    return false
-  }
-}
-
-function isShortcutRegistered(shortcut: string) {
-  return shortcut === DOUBLE_SHIFT_SHORTCUT
-    ? isDoubleShiftRegistered()
-    : globalShortcut.isRegistered(shortcut)
-}
-
-function unregisterShortcut(shortcut: string) {
-  if (shortcut === DOUBLE_SHIFT_SHORTCUT) stopDoubleShift()
-  else globalShortcut.unregister(shortcut)
-}
-
-function refreshSelectionAccess() {
+async function refreshSelectionAccess() {
   const access = selectionAccess()
-  if (
-    access.granted &&
-    store.getState().settings.shortcut === DOUBLE_SHIFT_SHORTCUT &&
-    !isDoubleShiftRegistered()
-  ) {
-    if (registerShortcut(DOUBLE_SHIFT_SHORTCUT)) shortcutError = null
-  }
+  if (access.granted) await shortcuts.recover()
   return access
 }
 
@@ -185,11 +124,51 @@ function handle(channel: string, handler: (payload: unknown) => unknown) {
 }
 
 function installHandlers() {
+  handle(channels.draftDrainRegistration, (payload) => {
+    const request = z
+      .object({ registrationId: z.string().uuid(), active: z.boolean() })
+      .parse(payload)
+    draftQuit.register(request.registrationId, request.active)
+  })
+  handle(channels.draftDrainCompleted, (payload) => {
+    const request = z
+      .object({
+        id: z.string().uuid(),
+        registrationId: z.string().uuid(),
+        error: z.string().max(10_000).optional(),
+      })
+      .parse(payload)
+    draftQuit.complete(request, request.error)
+  })
   handle(channels.state, async () => {
     await store.whenIdle()
     return snapshot()
   })
-  handle(channels.capture, (payload) => capture(z.boolean().parse(payload)))
+  handle(channels.editDraft, async (payload) => {
+    const request = z
+      .object({
+        id: z.string().min(1).max(100),
+        revision: z.number().int().nonnegative(),
+        action: z.enum(['update', 'save', 'discard']),
+        draft: draftSchema.optional(),
+      })
+      .parse(payload)
+    const result = await store.editDraft(request)
+    return {
+      accepted: result.accepted,
+      snapshot: {
+        library: result.library,
+        revision: result.revision,
+        draftWriteId: result.draftWriteId,
+        shortcutError: shortcuts.shortcutError,
+      },
+    }
+  })
+  handle(channels.capture, async (payload) => {
+    if (preparingQuit || quitting) throw new Error('Machete is preparing to quit.')
+    await captures.request(z.boolean().parse(payload) ? 'clipboard' : 'empty', false)
+    return snapshot()
+  })
   handle(channels.selectionAccess, async (payload) => {
     if (z.boolean().parse(payload)) await requestSelectionAccess()
     return refreshSelectionAccess()
@@ -200,25 +179,7 @@ function installHandlers() {
       await store.execute(command)
       return snapshot()
     }
-    const previous = store.getState().settings.shortcut
-    const next = command.shortcut
-    if (next === previous && isShortcutRegistered(previous)) return snapshot()
-    if (!registerShortcut(next)) {
-      if (next === DOUBLE_SHIFT_SHORTCUT) {
-        throw new Error(
-          'Double Shift requires macOS Accessibility access. Enable selection capture in Settings first.',
-        )
-      }
-      throw new Error('That shortcut is unavailable. Try another key combination.')
-    }
-    try {
-      await store.execute(command)
-    } catch (error) {
-      if (next !== previous) unregisterShortcut(next)
-      throw error
-    }
-    if (next !== previous) unregisterShortcut(previous)
-    shortcutError = null
+    await shortcuts.change(command.shortcut)
     return snapshot()
   })
   handle(channels.copy, async (payload) => {
@@ -281,6 +242,29 @@ function installHandlers() {
 async function start() {
   await app.whenReady()
   store = await LibraryStore.open(join(app.getPath('userData'), 'collection.json'))
+  captures = new CaptureController(
+    store,
+    {
+      selection:
+        process.platform === 'darwin'
+          ? readSelection
+          : async () => ({ status: 'captured', text: await clipboard.readText() }),
+      clipboard: () => clipboard.readText(),
+    },
+    { ready: () => startup, show: present },
+  )
+  shortcuts = new ShortcutController(
+    store,
+    {
+      electron: globalShortcut,
+      doubleShift: {
+        register: (_shortcut, callback) => startDoubleShift(callback),
+        unregister: () => stopDoubleShift(),
+        isRegistered: () => isDoubleShiftRegistered(),
+      },
+    },
+    () => void captureSelectionAndShow(),
+  )
   const rendererRoot = resolve(directory, '../renderer')
   protocol.handle('machete', (request) => {
     const url = new URL(request.url)
@@ -328,7 +312,12 @@ async function start() {
   tray.on('click', () => void show('browse'))
   const trayMenu = Menu.buildFromTemplate([
     { label: 'Open Machete', click: () => void show('browse') },
-    { label: 'Capture clipboard', click: () => void captureAndShow() },
+    {
+      label: 'Capture clipboard',
+      click: () => {
+        if (!preparingQuit && !quitting) void captures.request('clipboard').catch(report)
+      },
+    },
     { type: 'separator' },
     { label: 'Quit Machete', role: 'quit' },
   ])
@@ -343,13 +332,7 @@ async function start() {
       { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'close' }] },
     ]),
   )
-  const accelerator = store.getState().settings.shortcut
-  if (!registerShortcut(accelerator)) {
-    shortcutError =
-      accelerator === DOUBLE_SHIFT_SHORTCUT
-        ? 'Enable Accessibility in Settings to use Double Shift.'
-        : 'Your capture shortcut is unavailable. Choose a different one in Settings.'
-  }
+  await shortcuts.start()
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
   await window.loadURL(developmentUrl || 'machete://app/index.html')
 }
@@ -370,20 +353,34 @@ if (hasLock) {
   app.on('before-quit', (event) => {
     if (quitting || !store) return
     event.preventDefault()
-    quitting = true
-    stopDoubleShift()
-    // Let an in-flight Copy restore the clipboard before exiting.
-    void Promise.resolve(selectionTask)
-      .then(() => store.whenIdle())
-      .finally(() => app.quit())
+    if (preparingQuit) return
+    preparingQuit = true
+    void (async () => {
+      try {
+        await draftQuit.drain()
+      } catch (error) {
+        preparingQuit = false
+        if (!window.isDestroyed()) {
+          window.webContents.send(channels.draftDrainCancelled)
+          window.show()
+        }
+        report(error)
+        return
+      }
+      quitting = true
+      await Promise.all([shortcuts?.stop(), captures?.stop()])
+      await store.whenIdle()
+      app.quit()
+    })().catch(report)
   })
-  app.on('will-quit', () => globalShortcut.unregisterAll())
+  app.on('will-quit', () => void shortcuts?.stop())
   startup = start().catch((error) => {
     // Closing the app can reject its initial page load. Shutdown is already
     // underway; a modal startup error here would prevent it from finishing.
     if (quitting) return
     report(error)
     quitting = true
+    void shortcuts?.stop()
     app.quit()
   })
   if (!process.argv.includes('--hidden')) void show('browse')
