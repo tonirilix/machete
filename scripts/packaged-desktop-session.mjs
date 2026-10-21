@@ -447,6 +447,8 @@ export async function createPackagedDesktopSession({
         `Set :CFBundleIdentifier ${session.identifier}`,
         join(bundle, 'Contents/Info.plist'),
       ])
+      // Changing the copied bundle identifier invalidates its original seal.
+      run('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', bundle])
     } else {
       // An installed copy can share the granted bundle identifier. Stop and
       // later reopen that exact bundle so single-instance routing cannot send
