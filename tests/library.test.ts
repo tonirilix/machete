@@ -20,6 +20,37 @@ function save(library: Library, text: string, boardId = 'inbox', time = Date.now
 }
 
 describe('deliberately saved clips', () => {
+  it('saves each quick capture in Inbox verbatim without creating a draft', () => {
+    const text = '  code\n\t選択 👋\n'
+    const first = applyCommand(createLibrary(), { type: 'save-capture', text })
+    const second = applyCommand(first, { type: 'save-capture', text })
+    expect(second.clips.map((clip) => [clip.text, clip.boardId])).toEqual([
+      [text, 'inbox'],
+      [text, 'inbox'],
+    ])
+    expect(second.clips[0].id).not.toBe(second.clips[1].id)
+    expect(second.draft).toBeNull()
+  })
+
+  it('keeps an unfinished manual draft and its board separate from quick captures', () => {
+    let library = applyCommand(createLibrary(), { type: 'create-board', name: 'Work' })
+    const boardId = library.boards[1].id
+    library = applyCommand(library, { type: 'begin-capture', text: '' })
+    library = applyCommand(library, { type: 'update-draft', text: 'unfinished', boardId })
+    const captured = applyCommand(library, { type: 'save-capture', text: 'separate selection' })
+    expect(captured.draft).toEqual({ text: 'unfinished', boardId })
+    expect(captured.clips[0]).toMatchObject({ text: 'separate selection', boardId: 'inbox' })
+    expect(library.clips).toEqual([])
+  })
+
+  it('rejects blank and oversized quick captures without changing the collection', () => {
+    const library = createLibrary()
+    for (const text of ['', ' \n\t', 'x'.repeat(MAX_CLIP_LENGTH + 1)]) {
+      expect(() => applyCommand(library, { type: 'save-capture', text })).toThrow()
+    }
+    expect(library).toEqual(createLibrary())
+  })
+
   it('starts a selection draft without saving a clip and appends subsequent selections verbatim', () => {
     let library = applyCommand(createLibrary(), { type: 'append-capture', text: '  first\n' })
     expect(library.draft).toEqual({ text: '  first\n', boardId: 'inbox' })
