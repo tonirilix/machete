@@ -50,6 +50,7 @@ import { LibrarySidebar } from '@/components/library-sidebar'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { bridge, errorMessage, isDesktop, shortcutLabel } from '@/lib/bridge'
 import { cn } from '@/lib/utils'
+import appIcon from '@/assets/icon.png'
 
 type Mode = { type: 'browse' } | { type: 'capture' } | { type: 'edit'; clipId: string }
 type Confirmation = {
@@ -336,9 +337,7 @@ export function App() {
         )}
       >
         <div className="flex items-center gap-2.5">
-          <span className="brand-mark">
-            <Layers2 className="size-4" />
-          </span>
+          <img src={appIcon} className="brand-mark" alt="" width={30} height={30} />
           <span className="text-[13px] font-semibold tracking-[-0.03em]">
             machete<span className="text-primary">.</span>
           </span>

@@ -98,14 +98,10 @@
     -webkit-app-region: no-drag;
   }
   .brand-mark {
-    display: grid;
-    place-items: center;
-    height: 26px;
-    width: 26px;
-    border: 1px solid #cad9c4;
-    background: #e9f0e4;
-    border-radius: 7px;
-    color: var(--primary);
+    display: block;
+    height: 30px;
+    width: 30px;
+    flex-shrink: 0;
   }
   .sidebar {
     background: #f0f3ec;

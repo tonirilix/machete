@@ -124,6 +124,11 @@ notarization, and automatic updates remain future distribution work.
 On macOS, open the packaged app with `open release/mac/Machete.app`.
 Running that command again brings the existing window forward.
 
+The app uses the Folded M icon. Its 1024px master is `resources/icon.png`;
+after replacing it, run `npm run build:icons` on macOS to regenerate the `.icns`,
+header icon, and browser favicon. These generated assets are checked in so
+release builds use them without running image conversion tools.
+
 ### Automated release builds
 
 After this workflow is merged into `main`, open **Actions → Build macOS release →
