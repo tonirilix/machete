@@ -2,13 +2,19 @@ import { EventEmitter } from 'node:events'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { channels } from '../src/shared/bridge'
 import { createLibrary, DEFAULT_SHORTCUT, DOUBLE_SHIFT_SHORTCUT } from '../src/shared/library'
 import type { SelectionResult } from '../src/main/selection'
 
 const directories: string[] = []
+const platform = process.platform
+beforeEach(() => {
+  // This fixture models macOS native selection and Dock events on any host.
+  Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+})
 afterEach(async () => {
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true })
   vi.unstubAllEnvs()
   vi.resetModules()
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
