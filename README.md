@@ -1,3 +1,5 @@
+<img src="resources/icon.png" alt="Machete Folded M icon" width="96" height="96" align="right" />
+
 # Machete
 
 A small desktop space for useful text. Save a command, a link, or a thought;
