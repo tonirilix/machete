@@ -304,6 +304,7 @@ function createWindow() {
     minHeight: 560,
     show: false,
     title: 'Machete',
+    icon: join(directory, '../../resources/icon.png'),
     backgroundColor: '#f7f8f5',
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 16, y: 19 },
@@ -315,6 +316,9 @@ function createWindow() {
       backgroundThrottling: false,
     },
   })
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    app.dock?.setIcon(join(directory, '../../resources/icon.png'))
+  }
   created.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   created.webContents.on('will-navigate', (event) => event.preventDefault())
   window = created

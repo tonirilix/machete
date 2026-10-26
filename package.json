@@ -16,6 +16,7 @@
     "test:desktop": "npm run build && node scripts/run-desktop-smoke.mjs",
     "test:launch": "node scripts/check-macos-startup-quit.mjs && node scripts/check-macos-cold-launch.mjs && node scripts/check-macos-launch.mjs",
     "build:native": "node scripts/build-native.mjs",
+    "build:icons": "node scripts/build-icons.mjs",
     "build": "npm run build:native && npm run typecheck && electron-vite build",
     "preview": "node scripts/desktop.mjs preview",
     "pack": "npm run build && electron-builder --dir",
@@ -45,10 +46,12 @@
     "mac": {
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "category": "public.app-category.productivity",
+      "icon": "resources/icon.icns",
       "identity": "-",
       "hardenedRuntime": false
     },
     "linux": {
+      "icon": "resources/icon.png",
       "category": "Utility"
     }
   },
