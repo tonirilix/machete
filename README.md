@@ -7,28 +7,28 @@ organize clips into boards; find and copy them when you need them again.
 
 Built for macOS with Electron, React, TypeScript, Tailwind CSS, and shadcn/ui.
 
-## Download
+## Download and install
 
-Installers are available from [GitHub Releases](https://github.com/tonirilix/machete/releases)
-after a release build finishes. Choose `arm64.dmg` for Apple Silicon (M1 or later)
-or `x64.dmg` for Intel, open the disk image, and drag Machete into Applications.
-Quit an older copy before replacing it. ZIP downloads and SHA-256 checksums are
-also provided.
+1. Open [GitHub Releases](https://github.com/tonirilix/machete/releases) and expand
+   the release's **Assets**. Development builds are marked **Pre-release**.
+2. Download the DMG ending in `-arm64.dmg` for Apple Silicon (M1 or later), or
+   `-x64.dmg` for Intel. ZIP downloads and SHA-256 checksums are also available.
+3. Quit the existing Machete app before replacing it. Closing its window leaves
+   it running; right-click the menu bar icon and choose **Quit Machete**.
+4. Open the disk image, drag **Machete** into Applications, and launch the installed
+   copy. Then [enable selection capture](#enable-selection-capture-on-macos).
+
+Your collection is stored separately from the app; replacing `Machete.app` keeps
+your saved clips and boards.
 
 The downloads are ad-hoc signed, not notarized by Apple. If macOS blocks the first
 launch and you trust the download, follow
 [Apple’s opening instructions](https://support.apple.com/en-us/102445).
-Selection capture still requires Accessibility permission; a new ad-hoc build can
-require permission again.
+Updates can also require removing and re-adding Accessibility permission, even
+when Machete's switch is already enabled. See
+[capture stops working after an update](#capture-stops-working-after-an-update).
 
-## Run
-
-Use Node.js 22.12+ and npm.
-
-```sh
-npm install
-npm run dev
-```
+## Use Machete
 
 The app opens a compact window and stays in the menu bar when the window closes.
 On macOS it keeps a Dock icon as well as its menu bar icon.
@@ -59,20 +59,35 @@ and never records typed text.
 
 In Machete Settings, click **Enable selection capture**, then allow
 **Machete** under **Privacy & Security → Accessibility** in System Settings.
-Return to another app, select text, and press **Cmd+Shift+Space**. The selection
-is saved immediately as a new clip in Inbox. If permission does not update,
-quit and reopen Machete. Use the packaged app when granting permission;
-development mode runs under Electron's identity.
-Local macOS packages use an ad-hoc signature. Rebuilding changes the code identity
-and can require granting Accessibility again. Quit every running Machete copy
-before replacing the app, then grant access to the exact signed copy you launch.
-A switch left enabled for an older build does not prove the new build has access.
+Return to another app, select text, and press your capture shortcut (default:
+**Cmd+Shift+Space**). The selection is saved immediately as a new clip in Inbox.
+Use the installed, packaged app when granting permission; development mode runs
+under Electron's identity. If the app does not recognize a new grant, quit and
+reopen it.
 
 The app reads selections only when you invoke the shortcut. It first asks the
 source app for accessible selected text. When unavailable, it sends Copy and
 restores the previous clipboard's formats, unless something newer was copied.
-Unsupported selections produce a message; **Capture clipboard** remains a manual
-alternative. There is no background clipboard monitoring.
+Unsupported selections produce a message. You can copy the text yourself and use
+**New clip → Append clipboard**, then save the draft. The menu bar also offers
+**Append clipboard to draft**. There is no background clipboard monitoring.
+
+### Capture stops working after an update
+
+Downloaded and locally packaged builds currently use ad-hoc signing. macOS ties
+the permission to a particular build, so an existing **Machete** entry can still
+refer to the previous version. Turning that entry off and on may not refresh it.
+[Apple explains how signing affects permission identity](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements).
+
+If selection capture or Double Shift stops working after an update:
+
+1. Quit Machete using **Quit Machete** in its menu bar menu.
+2. Open **System Settings → Privacy & Security → Accessibility**.
+3. Select the old **Machete** entry and remove it with the minus button.
+4. Use the plus button to add the newly installed `Machete.app`, then enable its
+   switch. Choose the same copy you launch, such as `/Applications/Machete.app`
+   or `~/Applications/Machete.app`.
+5. Reopen Machete, select text in another app, and try the capture shortcut again.
 
 ## Data
 
@@ -91,10 +106,24 @@ Machete keeps the original `Cliptoboards` collection directory, backup format
 identifier, and macOS bundle identifier for compatibility with existing data and
 installations. The app and npm package are now named Machete and `machete`.
 
+Collections are local to one Mac. Use export/import to transfer them between
+devices; automatic synchronization is future work.
+
+## Development
+
+Use Node.js 22.12+ and npm from a checkout of this repository. Running the macOS
+app from source also requires Xcode Command Line Tools to build the native
+selection bridge.
+
+```sh
+npm ci
+npm run dev
+```
+
 Set `MACHETE_DATA_DIR` to a separate directory when testing with disposable
 desktop data.
 
-## Browser preview
+### Browser preview
 
 ```sh
 npm run dev:web
@@ -105,7 +134,7 @@ browser storage and browser clipboard permissions. It shares the desktop UI and
 domain logic. Native tray access, global shortcuts, and desktop focus behavior
 require the Electron app.
 
-## Check and package
+### Check and package
 
 ```sh
 npm run typecheck
@@ -123,8 +152,10 @@ npm run test:selection
 no Apple account and does not notarize the app. A persistent Apple signing identity,
 notarization, and automatic updates remain future distribution work.
 
-On macOS, open the packaged app with `open release/mac/Machete.app`.
-Running that command again brings the existing window forward.
+Open the packaged `Machete.app` under `release/mac/` for x64 builds or
+`release/mac-arm64/` for arm64 builds. For example, an x64 build launches with
+`open release/mac/Machete.app`. Running that command again brings the existing
+window forward.
 
 The app uses the Folded M icon. Its 1024px master is `resources/icon.png`;
 after replacing it, run `npm run build:icons` on macOS to regenerate the `.icns`,
@@ -136,9 +167,12 @@ release builds use them without running image conversion tools.
 The **CI** workflow runs TypeScript checks and unit tests for pull requests and
 pushes to `main`. It uses one standard Ubuntu runner, cancels superseded runs,
 and retains no artifacts or dependency caches. Like the release workflow, it
-only runs for public repositories.
+only runs for public repositories. Each new commit pushed to an open PR starts
+a fresh check; merging into `main` triggers a push check too.
 
-### Automated release builds
+### Release builds
+
+Installer builds use a separate workflow with manual and version-tag triggers.
 
 To create installers, open **Actions → Build macOS release →
 Run workflow**, select a branch, and run it. This publishes a development
@@ -165,6 +199,13 @@ and [release limits](https://docs.github.com/en/repositories/releasing-projects-
 Account billing budgets are managed separately in GitHub Settings; this workflow
 does not change them. No Apple signing credentials are required for these ad-hoc
 builds; Developer ID signing, notarization, and automatic app updates remain separate work.
+
+### Desktop and native checks
+
+Packaged launch and selection scripts default to `release/mac/Machete.app`.
+For an arm64 build, pass `release/mac-arm64/Machete.app` as the first argument to
+each `scripts/check-macos-*.mjs` script, or use
+`npm run test:selection -- release/mac-arm64/Machete.app` for the selection check.
 
 The macOS launch check requires a desktop session, Xcode Command Line Tools, and
 an existing packaged app. It checks five fresh launches without a debugger,
