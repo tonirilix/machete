@@ -131,9 +131,16 @@ after replacing it, run `npm run build:icons` on macOS to regenerate the `.icns`
 header icon, and browser favicon. These generated assets are checked in so
 release builds use them without running image conversion tools.
 
+### Automatic checks
+
+The **CI** workflow runs TypeScript checks and unit tests for pull requests and
+pushes to `main`. It uses one standard Ubuntu runner, cancels superseded runs,
+and retains no artifacts or dependency caches. Like the release workflow, it
+only runs for public repositories.
+
 ### Automated release builds
 
-After this workflow is merged into `main`, open **Actions → Build macOS release →
+To create installers, open **Actions → Build macOS release →
 Run workflow**, select a branch, and run it. This publishes a development
 prerelease named `build-<run-id>` with a unique `-dev.<run-id>` app version. It
 does not replace the latest stable release.
