@@ -172,6 +172,138 @@ describe('boards and Trash', () => {
   })
 })
 
+describe('moving clips between boards', () => {
+  function setup() {
+    let library = applyCommand(createLibrary(), { type: 'create-board', name: 'A' })
+    library = applyCommand(library, { type: 'create-board', name: 'B' })
+    const [, a, b] = library.boards
+    library = save(library, 'one')
+    library = save(library, 'two')
+    library = save(library, 'three')
+    const [three, two, one] = library.clips
+    return { library, a, b, one, two, three }
+  }
+
+  it('moves several clips to a board with one move-clips command', () => {
+    const { library, a, one, two, three } = setup()
+    const moved = applyCommand(library, {
+      type: 'move-clips',
+      ids: [one.id, two.id],
+      boardId: a.id,
+    })
+    const board = (id: string) => moved.clips.find((clip) => clip.id === id)?.boardId
+    expect(board(one.id)).toBe(a.id)
+    expect(board(two.id)).toBe(a.id)
+    expect(board(three.id)).toBe('inbox')
+  })
+
+  it('rejects move-clips to a missing board without changing the library', () => {
+    const { library, one } = setup()
+    const snapshot = structuredClone(library)
+    expect(() =>
+      applyCommand(library, { type: 'move-clips', ids: [one.id], boardId: 'missing' }),
+    ).toThrow('no longer exists')
+    expect(library).toEqual(snapshot)
+  })
+
+  it('rejects move-clips with a missing clip without changing the library', () => {
+    const { library, a, one } = setup()
+    const snapshot = structuredClone(library)
+    expect(() =>
+      applyCommand(library, { type: 'move-clips', ids: [one.id, 'missing'], boardId: a.id }),
+    ).toThrow('no longer exists')
+    expect(library).toEqual(snapshot)
+  })
+
+  it('creates a board and moves the clips with move-clips-to-new-board', () => {
+    const { library, a, one, two, three } = setup()
+    const newBoardId = crypto.randomUUID()
+    const onA = applyCommand(library, { type: 'move-clips', ids: [two.id], boardId: a.id })
+    const moved = applyCommand(
+      onA,
+      { type: 'move-clips-to-new-board', ids: [one.id, two.id], name: '  Fresh  ' },
+      { now: () => 1, id: () => newBoardId },
+    )
+    expect(moved.boards.filter((board) => board.name === 'Fresh')).toHaveLength(1)
+    const board = (id: string) => moved.clips.find((clip) => clip.id === id)?.boardId
+    expect(board(one.id)).toBe(newBoardId)
+    expect(board(two.id)).toBe(newBoardId)
+    expect(board(three.id)).toBe('inbox')
+  })
+
+  it('rejects move-clips-to-new-board with a duplicate board name', () => {
+    const { library, one } = setup()
+    const snapshot = structuredClone(library)
+    expect(() =>
+      applyCommand(library, { type: 'move-clips-to-new-board', ids: [one.id], name: ' inbox ' }),
+    ).toThrow('already exists')
+    expect(library).toEqual(snapshot)
+    expect(library.boards).toHaveLength(3)
+  })
+
+  it('rejects move-clips-to-new-board with an unknown clip id', () => {
+    const { library, one } = setup()
+    const snapshot = structuredClone(library)
+    expect(() =>
+      applyCommand(library, {
+        type: 'move-clips-to-new-board',
+        ids: [one.id, 'missing'],
+        name: 'Fresh',
+      }),
+    ).toThrow('no longer exists')
+    expect(library).toEqual(snapshot)
+  })
+
+  it('places each clip on its own board with place-clips', () => {
+    const { library, a, b, one, two } = setup()
+    const onA = applyCommand(library, { type: 'move-clips', ids: [one.id, two.id], boardId: a.id })
+    const placed = applyCommand(onA, {
+      type: 'place-clips',
+      placements: [
+        { id: one.id, boardId: 'inbox' },
+        { id: two.id, boardId: b.id },
+      ],
+    })
+    const board = (id: string) => placed.clips.find((clip) => clip.id === id)?.boardId
+    expect(board(one.id)).toBe('inbox')
+    expect(board(two.id)).toBe(b.id)
+  })
+
+  it('rejects place-clips with an unknown clip', () => {
+    const { library, a, one } = setup()
+    const snapshot = structuredClone(library)
+    expect(() =>
+      applyCommand(library, {
+        type: 'place-clips',
+        placements: [
+          { id: one.id, boardId: a.id },
+          { id: 'missing', boardId: a.id },
+        ],
+      }),
+    ).toThrow('no longer exists')
+    expect(library).toEqual(snapshot)
+  })
+
+  it('rejects place-clips with an unknown board', () => {
+    const { library, a, one, two } = setup()
+    const snapshot = structuredClone(library)
+    expect(() =>
+      applyCommand(library, {
+        type: 'place-clips',
+        placements: [
+          { id: one.id, boardId: a.id },
+          { id: two.id, boardId: 'missing' },
+        ],
+      }),
+    ).toThrow('no longer exists')
+    expect(library).toEqual(snapshot)
+  })
+
+  it('rejects place-clips with no placements', () => {
+    expect(() => applyCommand(createLibrary(), { type: 'place-clips', placements: [] })).toThrow()
+  })
+})
+
 describe('portable collections', () => {
   it('round-trips boards and Trash while preserving destination shortcut settings', () => {
     let source = save(createLibrary(), 'a saved reference')
