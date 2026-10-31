@@ -24,7 +24,7 @@ the selection footer, with an Undo toast. See `docs/chamb/bulk-move/spec.md`.
 - **Notes:** `git grep -c move-clips origin/main -- src tests` → 1 use in App.tsx, 2 in library.ts, 0 in tests. Typecheck and test baselines are taken by `chamb baseline` and the planner.
 
 ### Phase 2 — Footer "Move to board" for existing boards, with Undo toast
-- **Status:** pending
+- **Status:** verified
 - **After:** Phase 1
 - **Covers:** R4, R5, R6, R8, R9, R10
 - **Type:** feature

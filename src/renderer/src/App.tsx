@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Check,
   Copy,
+  Folder,
   Inbox,
   Layers2,
   LoaderCircle,
@@ -43,7 +44,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { ClipCard } from '@/components/clip-card'
+import { moveMessage, moveTargets, undoPlacements } from '@/lib/bulk-move'
 import { DraftEditing } from '@/lib/draft-editing'
 import { ClipEditor, DraftEditor } from '@/components/clip-editor'
 import { LibrarySidebar } from '@/components/library-sidebar'
@@ -188,6 +197,22 @@ export function App() {
           label: 'Undo',
           onClick: () => {
             void run({ type: 'restore-clips', ids })
+          },
+        },
+      })
+    }
+  }
+
+  async function moveSelected(board: Board) {
+    if (!selectedVisible.length) return
+    const placements = undoPlacements(clips, selectedVisible)
+    if (await run({ type: 'move-clips', ids: selectedVisible, boardId: board.id })) {
+      setSelected([])
+      toast.success(moveMessage(selectedVisible.length, board.name), {
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void run({ type: 'place-clips', placements })
           },
         },
       })
@@ -557,6 +582,28 @@ export function App() {
                           >
                             <Trash2 />
                           </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost">
+                                <Folder />
+                                Move to board
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" side="top">
+                              <DropdownMenuLabel>Choose a board</DropdownMenuLabel>
+                              {moveTargets(state.boards, active).map((item) => (
+                                <DropdownMenuItem
+                                  key={item.id}
+                                  onSelect={() => void moveSelected(item)}
+                                >
+                                  {item.name}
+                                </DropdownMenuItem>
+                              ))}
+                              {!moveTargets(state.boards, active).length && (
+                                <DropdownMenuItem disabled>No other boards</DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                           <Button size="sm" onClick={() => void copy()}>
                             <Copy />
                             Copy
