@@ -4,7 +4,7 @@ Move every selected clip to another board, or to a new board, in one action from
 the selection footer, with an Undo toast. See `docs/chamb/bulk-move/spec.md`.
 
 ### Phase 1 — Core commands for bulk move, new-board move and Undo
-- **Status:** verified
+- **Status:** done
 - **After:** none
 - **Covers:** R1, R2, R3
 - **Type:** feature
@@ -24,7 +24,7 @@ the selection footer, with an Undo toast. See `docs/chamb/bulk-move/spec.md`.
 - **Notes:** `git grep -c move-clips origin/main -- src tests` → 1 use in App.tsx, 2 in library.ts, 0 in tests. Typecheck and test baselines are taken by `chamb baseline` and the planner.
 
 ### Phase 2 — Footer "Move to board" for existing boards, with Undo toast
-- **Status:** verified
+- **Status:** done
 - **After:** Phase 1
 - **Covers:** R4, R5, R6, R8, R9, R10
 - **Type:** feature
@@ -44,7 +44,7 @@ the selection footer, with an Undo toast. See `docs/chamb/bulk-move/spec.md`.
 - **Notes:** none
 
 ### Phase 3 — "New board…" destination in the footer menu
-- **Status:** verified
+- **Status:** done
 - **After:** Phase 2
 - **Covers:** R7, R8, R9
 - **Type:** feature
@@ -62,7 +62,7 @@ the selection footer, with an Undo toast. See `docs/chamb/bulk-move/spec.md`.
 - **Notes:** none
 
 ### Phase 4 — Document bulk move
-- **Status:** pending
+- **Status:** done
 - **After:** Phase 3
 - **Covers:** R11
 - **Type:** chore

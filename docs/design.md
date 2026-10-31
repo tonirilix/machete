@@ -45,6 +45,8 @@ MVP and requested shadcn/ui components for the Electron renderer.
   Trash is searched separately.
 - Copy selected clips in visible list order, separated by blank lines, preserving
   internal whitespace. The user pastes into the destination app manually.
+- Move selected clips to another board, or to a new board, from the selection
+  bar. The move can be undone.
 
 ## Organization and recovery
 
