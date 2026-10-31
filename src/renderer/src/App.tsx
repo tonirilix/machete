@@ -49,6 +49,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ClipCard } from '@/components/clip-card'
@@ -91,7 +92,11 @@ export function App() {
   const [selected, setSelected] = useState<string[]>([])
   const [anchor, setAnchor] = useState<string | null>(null)
   const [settings, setSettings] = useState(false)
-  const [boardPrompt, setBoardPrompt] = useState<{ board?: Board; name: string } | null>(null)
+  const [boardPrompt, setBoardPrompt] = useState<{
+    board?: Board
+    ids?: string[]
+    name: string
+  } | null>(null)
   const [boardBusy, setBoardBusy] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
@@ -208,15 +213,23 @@ export function App() {
     const placements = undoPlacements(clips, selectedVisible)
     if (await run({ type: 'move-clips', ids: selectedVisible, boardId: board.id })) {
       setSelected([])
-      toast.success(moveMessage(selectedVisible.length, board.name), {
-        action: {
-          label: 'Undo',
-          onClick: () => {
-            void run({ type: 'place-clips', placements })
-          },
-        },
-      })
+      showMoved(selectedVisible.length, board.name, placements)
     }
+  }
+
+  function showMoved(
+    count: number,
+    boardName: string,
+    placements: { id: string; boardId: string }[],
+  ) {
+    toast.success(moveMessage(count, boardName), {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          void run({ type: 'place-clips', placements })
+        },
+      },
+    })
   }
 
   function select(id: string, event?: MouseEvent) {
@@ -599,9 +612,14 @@ export function App() {
                                   {item.name}
                                 </DropdownMenuItem>
                               ))}
-                              {!moveTargets(state.boards, active).length && (
-                                <DropdownMenuItem disabled>No other boards</DropdownMenuItem>
+                              {moveTargets(state.boards, active).length > 0 && (
+                                <DropdownMenuSeparator />
                               )}
+                              <DropdownMenuItem
+                                onSelect={() => setBoardPrompt({ ids: selectedVisible, name: '' })}
+                              >
+                                New board…
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                           <Button size="sm" onClick={() => void copy()}>
@@ -652,12 +670,18 @@ export function App() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {boardPrompt?.board ? 'Rename board' : 'A place for your clips'}
+              {boardPrompt?.board
+                ? 'Rename board'
+                : boardPrompt?.ids
+                  ? 'Move to a new board'
+                  : 'A place for your clips'}
             </DialogTitle>
             <DialogDescription>
               {boardPrompt?.board
                 ? 'Give this collection a new name.'
-                : 'Group a few useful things under a familiar name.'}
+                : boardPrompt?.ids
+                  ? 'The selected clips will move into the new board.'
+                  : 'Group a few useful things under a familiar name.'}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -665,16 +689,24 @@ export function App() {
               event.preventDefault()
               if (!boardPrompt || boardBusy) return
               setBoardBusy(true)
+              const moveIds = boardPrompt.ids
+              const placements = moveIds ? undoPlacements(clips, moveIds) : []
               void run(
-                boardPrompt.board
-                  ? { type: 'rename-board', id: boardPrompt.board.id, name: boardPrompt.name }
-                  : { type: 'create-board', name: boardPrompt.name },
+                moveIds
+                  ? { type: 'move-clips-to-new-board', ids: moveIds, name: boardPrompt.name }
+                  : boardPrompt.board
+                    ? { type: 'rename-board', id: boardPrompt.board.id, name: boardPrompt.name }
+                    : { type: 'create-board', name: boardPrompt.name },
               )
                 .then((result) => {
-                  if (result) {
-                    if (!boardPrompt.board) navigate(result.library.boards.at(-1)!.id)
-                    setBoardPrompt(null)
+                  if (!result) return
+                  if (moveIds) {
+                    setSelected([])
+                    showMoved(moveIds.length, boardPrompt.name.trim(), placements)
+                  } else if (!boardPrompt.board) {
+                    navigate(result.library.boards.at(-1)!.id)
                   }
+                  setBoardPrompt(null)
                 })
                 .finally(() => setBoardBusy(false))
             }}
@@ -704,7 +736,11 @@ export function App() {
                 Cancel
               </Button>
               <Button type="submit" disabled={boardBusy || !boardPrompt?.name.trim()}>
-                {boardPrompt?.board ? 'Save name' : 'Create board'}
+                {boardPrompt?.board
+                  ? 'Save name'
+                  : boardPrompt?.ids
+                    ? 'Create and move'
+                    : 'Create board'}
               </Button>
             </DialogFooter>
           </form>

@@ -44,7 +44,7 @@ the selection footer, with an Undo toast. See `docs/chamb/bulk-move/spec.md`.
 - **Notes:** none
 
 ### Phase 3 — "New board…" destination in the footer menu
-- **Status:** pending
+- **Status:** verified
 - **After:** Phase 2
 - **Covers:** R7, R8, R9
 - **Type:** feature
