@@ -87,6 +87,10 @@ export type Library = z.infer<typeof librarySchema>
 export type Backup = z.infer<typeof backupSchema>
 
 const idsSchema = z.array(idSchema).min(1).max(100_000)
+const placementsSchema = z
+  .array(z.object({ id: idSchema, boardId: idSchema }))
+  .min(1)
+  .max(100_000)
 
 export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('begin-capture'), text: textSchema }),
@@ -105,6 +109,8 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('rename-board'), id: idSchema, name: nameSchema }),
   z.object({ type: z.literal('delete-board'), id: idSchema }),
   z.object({ type: z.literal('move-clips'), ids: idsSchema, boardId: idSchema }),
+  z.object({ type: z.literal('move-clips-to-new-board'), ids: idsSchema, name: nameSchema }),
+  z.object({ type: z.literal('place-clips'), placements: placementsSchema }),
   z.object({ type: z.literal('trash-clips'), ids: idsSchema }),
   z.object({ type: z.literal('restore-clips'), ids: idsSchema }),
   z.object({ type: z.literal('empty-trash') }),
@@ -226,6 +232,23 @@ export function applyCommand(
       requireBoard(command.boardId)
       for (const clip of matchingClips(command.ids)) clip.boardId = command.boardId
       break
+    case 'move-clips-to-new-board': {
+      requireName(command.name)
+      const clips = matchingClips(command.ids)
+      const board = { id: environment.id(), name: command.name, createdAt: now }
+      next.boards.push(board)
+      for (const clip of clips) clip.boardId = board.id
+      break
+    }
+    case 'place-clips': {
+      for (const placement of command.placements) requireBoard(placement.boardId)
+      const clips = matchingClips(command.placements.map((placement) => placement.id))
+      const boardIds = new Map(
+        command.placements.map((placement) => [placement.id, placement.boardId]),
+      )
+      for (const clip of clips) clip.boardId = boardIds.get(clip.id) ?? clip.boardId
+      break
+    }
     case 'trash-clips':
       for (const clip of matchingClips(command.ids)) clip.deletedAt ??= now
       break

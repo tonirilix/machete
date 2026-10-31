@@ -44,6 +44,8 @@ Right-click the menu bar icon to quit. New collections start with an empty Inbox
 - **Cmd+Enter:** save a clip.
 - **Cmd+K:** focus search while browsing.
 - **Cmd/Shift+click:** select clips; **Cmd+C** copies them in visible order.
+  **Move to board** in the selection bar moves them to another board or a **New
+  board…**; the selection clears and a toast offers Undo.
 - **Escape:** dismiss the active dialog/editor or clear selection/search. Keeps the app visible.
 
 Change the capture shortcut in Settings if it conflicts with another app.

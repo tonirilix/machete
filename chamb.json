@@ -1,0 +1,8 @@
+{
+  "commands": {
+    "setup": "npm ci",
+    "test": "npm test",
+    "typecheck": "npm run typecheck"
+  },
+  "rules": ["AGENTS.md", "GLOSSARY.md", "docs/agents/domain.md"]
+}
