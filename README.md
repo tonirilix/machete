@@ -94,7 +94,7 @@ If selection capture or Double Shift stops working after an update:
 ## Data
 
 The desktop app keeps `collection.json` in
-`~/Library/Application Support/Cliptoboards/`. Clips, boards, Trash, the unfinished
+`~/Library/Application Support/com.tonirilix.machete/`. Clips, boards, Trash, the unfinished
 draft, and shortcut settings are stored locally. Writes are serialized and use a
 temporary file followed by a rename; failed writes do not replace the in-memory
 collection. An unreadable collection is left intact and reported at startup.
@@ -104,9 +104,18 @@ and Trash. Import validates the file and asks for confirmation before replacing
 the collection; the local shortcut is preserved and the unfinished draft is
 cleared. Drafts and device settings are not part of the portable backup.
 
-Machete keeps the original `Cliptoboards` collection directory, backup format
-identifier, and macOS bundle identifier for compatibility with existing data and
-installations. The app and npm package are now named Machete and `machete`.
+When the new collection file is absent, Machete automatically copies and validates
+`collection.json` from the old `~/Library/Application Support/Cliptoboards/` folder
+on startup. Clips, boards, Trash, the unfinished draft, and shortcut settings all
+carry over. The old file stays intact as a recovery copy. An existing destination
+collection always takes precedence; the two collections are not merged. Invalid
+legacy data or a failed copy is reported instead of silently starting an empty
+collection. Quit older copies of Machete before installing an update.
+
+The backup format and macOS bundle identifier remain compatible with existing
+backups and installations. `MACHETE_DATA_DIR` overrides the default directory;
+the older `CLIPTOBOARDS_DATA_DIR` override is still supported. Overrides opt out
+of automatic migration.
 
 Collections are local to one Mac. Use export/import to transfer them between
 devices; automatic synchronization is future work.
