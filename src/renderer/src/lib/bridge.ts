@@ -1,4 +1,5 @@
 import type { DesktopBridge, Snapshot } from '../../../shared/bridge'
+import { draftEditSchema } from '../../../shared/draft-edit-schema'
 import {
   applyCommand,
   backupSchema,
@@ -39,7 +40,8 @@ export function createBrowserBridge(): DesktopBridge {
 
   return {
     getState: async () => snapshot(),
-    editDraft: async (request) => {
+    editDraft: async (input) => {
+      const request = draftEditSchema.parse(input)
       if (request.revision !== revision) return { accepted: false, snapshot: snapshot() }
       const command =
         request.action === 'discard'
@@ -48,9 +50,12 @@ export function createBrowserBridge(): DesktopBridge {
             ? { type: 'save-draft' as const, ...request.draft! }
             : { type: 'update-draft' as const, ...request.draft! }
       const next = applyCommand(current(), command)
-      const result = save(next)
+      localStorage.setItem(key, JSON.stringify(next))
+      library = next
+      revision++
       draftWriteId = request.id
-      return { accepted: true, snapshot: { ...result, draftWriteId } }
+      if (request.action === 'update') return { accepted: true, revision, draftWriteId }
+      return { accepted: true, snapshot: snapshot() }
     },
     execute: async (command) => save(applyCommand(current(), command)),
     capture: async (fromClipboard) => {

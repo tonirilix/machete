@@ -19,6 +19,8 @@ export class DraftEditing {
   private snapshot: Snapshot | null = null
   private durable: Draft | null = null
   private pending: DraftEdit | null = null
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private due = false
   private quitting = false
   private idleWaiters = new Set<{ resolve: () => void; reject: (error: Error) => void }>()
   private terminal: {
@@ -29,6 +31,7 @@ export class DraftEditing {
   constructor(
     private bridge: Pick<DesktopBridge, 'editDraft'>,
     private onSnapshot: (snapshot: Snapshot) => void = () => {},
+    private delay = 100,
   ) {}
 
   getState = () => this.state
@@ -46,7 +49,7 @@ export class DraftEditing {
 
   receive(snapshot: Snapshot) {
     this.accept(snapshot)
-    void this.flush()
+    this.schedule()
   }
 
   private accept(snapshot: Snapshot, acknowledged?: DraftEdit) {
@@ -109,6 +112,32 @@ export class DraftEditing {
   change(draft: Draft) {
     if (!this.state.draft || this.state.busy) return
     this.publish({ draft: { ...draft }, error: null })
+    this.schedule()
+  }
+
+  private schedule() {
+    if (
+      this.timer ||
+      this.due ||
+      this.state.error ||
+      equal(this.state.draft, this.pending?.draft ?? this.durable)
+    )
+      return
+    if (!this.delay) {
+      void this.flush()
+      return
+    }
+    this.timer = setTimeout(() => {
+      this.timer = null
+      this.due = true
+      if (!this.pending) this.forceFlush()
+    }, this.delay)
+  }
+
+  private forceFlush() {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    this.due = false
     void this.flush()
   }
 
@@ -119,7 +148,7 @@ export class DraftEditing {
     }
     return new Promise((resolve, reject) => {
       this.idleWaiters.add({ resolve, reject })
-      void this.flush()
+      this.forceFlush()
     })
   }
 
@@ -166,7 +195,7 @@ export class DraftEditing {
     this.publish({ busy: true, error: null })
     return new Promise((resolve) => {
       this.terminal = { action, resolve }
-      void this.flush()
+      this.forceFlush()
     })
   }
 
@@ -180,10 +209,30 @@ export class DraftEditing {
       action: this.terminal?.action ?? 'update',
       draft: { ...this.state.draft },
     }
+    const baseline = this.snapshot
     this.pending = request
     try {
       const result = await this.bridge.editDraft(request)
-      this.accept(result.snapshot, result.accepted ? request : undefined)
+      if ('snapshot' in result) {
+        this.accept(result.snapshot, result.accepted ? request : undefined)
+      } else {
+        if (
+          request.action !== 'update' ||
+          result.draftWriteId !== request.id ||
+          result.revision !== request.revision + 1
+        ) {
+          throw new Error('Invalid draft acknowledgement.')
+        }
+        this.accept(
+          {
+            ...baseline,
+            revision: result.revision,
+            draftWriteId: result.draftWriteId,
+            library: { ...baseline.library, draft: request.draft! },
+          },
+          request,
+        )
+      }
       if (
         result.accepted &&
         request.action !== 'update' &&
@@ -206,7 +255,8 @@ export class DraftEditing {
     } finally {
       this.pending = null
       // Coalesce typing while preserving the latest value and any captured suffix.
-      void this.flush()
+      if (this.terminal || this.idleWaiters.size || this.due) this.forceFlush()
+      else this.schedule()
       this.settleIdle()
     }
   }

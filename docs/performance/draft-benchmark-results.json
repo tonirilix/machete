@@ -1,0 +1,195 @@
+{
+  "baseline": "4468985c4e312628beace0cef42c7a1e73a9660b",
+  "candidateParent": "4468985c4e312628beace0cef42c7a1e73a9660b",
+  "node": "v24.11.0",
+  "platform": "darwin",
+  "arch": "x64",
+  "fixtureBytes": 35775821,
+  "sourceHashes": {
+    "src/main/store.ts": "54cbc3ab837dbccff79ddbf3583d47dbac84349bbc011bdb70389bc5165eb997",
+    "src/renderer/src/lib/draft-editing.ts": "e15572bcb47c403021fa47f14bfe2c11682d0c329f090b1ceebec33cabceab9f",
+    "src/shared/bridge.ts": "3eadb49d91c310067728bba7db209e4efb07d60b40e1f59c7be85e3858122e3c"
+  },
+  "samples": [
+    {
+      "version": "baseline",
+      "workload": "sequential",
+      "round": 1,
+      "updates": 5,
+      "writes": 5,
+      "elapsedMs": 2493,
+      "maxTimerGapMs": 271,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "sequential",
+      "round": 1,
+      "updates": 5,
+      "writes": 5,
+      "elapsedMs": 1126,
+      "maxTimerGapMs": 174,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "baseline",
+      "workload": "burst",
+      "round": 1,
+      "updates": 20,
+      "writes": 2,
+      "elapsedMs": 866,
+      "maxTimerGapMs": 261,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "burst",
+      "round": 1,
+      "updates": 20,
+      "writes": 1,
+      "elapsedMs": 225,
+      "maxTimerGapMs": 168,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "baseline",
+      "workload": "sustained",
+      "round": 1,
+      "updates": 20,
+      "writes": 6,
+      "elapsedMs": 2577,
+      "maxTimerGapMs": 251,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "sustained",
+      "round": 1,
+      "updates": 20,
+      "writes": 5,
+      "elapsedMs": 1171,
+      "maxTimerGapMs": 159,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "candidate",
+      "workload": "sequential",
+      "round": 2,
+      "updates": 5,
+      "writes": 5,
+      "elapsedMs": 1004,
+      "maxTimerGapMs": 157,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "baseline",
+      "workload": "sequential",
+      "round": 2,
+      "updates": 5,
+      "writes": 5,
+      "elapsedMs": 2310,
+      "maxTimerGapMs": 249,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "burst",
+      "round": 2,
+      "updates": 20,
+      "writes": 1,
+      "elapsedMs": 214,
+      "maxTimerGapMs": 168,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "baseline",
+      "workload": "burst",
+      "round": 2,
+      "updates": 20,
+      "writes": 2,
+      "elapsedMs": 937,
+      "maxTimerGapMs": 252,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "sustained",
+      "round": 2,
+      "updates": 20,
+      "writes": 5,
+      "elapsedMs": 1117,
+      "maxTimerGapMs": 166,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "baseline",
+      "workload": "sustained",
+      "round": 2,
+      "updates": 20,
+      "writes": 6,
+      "elapsedMs": 2855,
+      "maxTimerGapMs": 246,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "baseline",
+      "workload": "sequential",
+      "round": 3,
+      "updates": 5,
+      "writes": 5,
+      "elapsedMs": 2346,
+      "maxTimerGapMs": 250,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "sequential",
+      "round": 3,
+      "updates": 5,
+      "writes": 5,
+      "elapsedMs": 989,
+      "maxTimerGapMs": 168,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "baseline",
+      "workload": "burst",
+      "round": 3,
+      "updates": 20,
+      "writes": 2,
+      "elapsedMs": 976,
+      "maxTimerGapMs": 250,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "burst",
+      "round": 3,
+      "updates": 20,
+      "writes": 1,
+      "elapsedMs": 188,
+      "maxTimerGapMs": 142,
+      "acknowledgementBytes": 84
+    },
+    {
+      "version": "baseline",
+      "workload": "sustained",
+      "round": 3,
+      "updates": 20,
+      "writes": 6,
+      "elapsedMs": 2743,
+      "maxTimerGapMs": 252,
+      "acknowledgementBytes": 34035866
+    },
+    {
+      "version": "candidate",
+      "workload": "sustained",
+      "round": 3,
+      "updates": 20,
+      "writes": 5,
+      "elapsedMs": 1188,
+      "maxTimerGapMs": 172,
+      "acknowledgementBytes": 84
+    }
+  ]
+}

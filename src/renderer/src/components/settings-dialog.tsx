@@ -42,19 +42,29 @@ export function SettingsDialog({
 
   useEffect(() => {
     let mounted = true
+    let previous: SelectionAccess | null = null
     const refresh = () => {
       void bridge
         .selectionAccess()
         .then(async (value) => {
           if (!mounted) return
           setAccess(value)
-          await onAccessChanged()
+          if (
+            !previous ||
+            previous.granted !== value.granted ||
+            previous.supported !== value.supported
+          ) {
+            previous = value
+            await onAccessChanged()
+          }
         })
         .catch(() => {})
     }
     refresh()
     window.addEventListener('focus', refresh)
-    const interval = window.setInterval(refresh, 2000)
+    const interval = window.setInterval(() => {
+      if (!document.hidden && document.hasFocus()) refresh()
+    }, 2000)
     return () => {
       mounted = false
       window.removeEventListener('focus', refresh)

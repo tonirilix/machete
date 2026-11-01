@@ -39,6 +39,25 @@ function setup(store = LibraryStore.inMemory()) {
 const combination = 'CommandOrControl+Shift+J'
 
 describe('shortcut lifecycle', () => {
+  it('reads only the committed shortcut during recovery without cloning the collection', async () => {
+    const write = deferred()
+    const persist = vi.fn(() => write.promise)
+    const store = LibraryStore.inMemory(persist)
+    const { shortcuts } = setup(store)
+    const clones = vi.spyOn(store, 'getState')
+    await shortcuts.start()
+    const change = shortcuts.change(combination)
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledOnce())
+    expect(store.getShortcut()).toBe(DEFAULT_SHORTCUT)
+    expect(clones).not.toHaveBeenCalled()
+    write.resolve()
+    await change
+    clones.mockClear()
+    await shortcuts.recover()
+    expect(store.getShortcut()).toBe(combination)
+    expect(clones).not.toHaveBeenCalled()
+  })
+
   it('registers the saved preference once and suppresses callbacks after teardown', async () => {
     const { shortcuts, electron, trigger } = setup()
     await shortcuts.start()

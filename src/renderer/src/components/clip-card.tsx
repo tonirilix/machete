@@ -79,7 +79,8 @@ export function ClipCard({
   onRestore,
   onMove,
 }: Props) {
-  const { label, Icon, code } = describe(clip.text)
+  const preview = clip.text.slice(0, 2000)
+  const { label, Icon, code } = describe(preview)
   const board = boards.find((board) => board.id === clip.boardId)
   const trashed = clip.deletedAt !== null
   return (
@@ -119,7 +120,7 @@ export function ClipCard({
             code && 'font-mono text-[12px]',
           )}
         >
-          {clip.text}
+          {preview}
         </span>
       </button>
       <div className="flex h-10 items-center justify-between border-t border-border/40 px-4">
