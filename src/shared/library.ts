@@ -293,7 +293,7 @@ export function visibleClips(library: Library, boardId: string, query: string): 
       (clip) =>
         (boardId === 'trash' ? clip.deletedAt !== null : clip.deletedAt === null) &&
         (boardId === 'all' || boardId === 'trash' || clip.boardId === boardId) &&
-        clip.text.toLocaleLowerCase().includes(term),
+        (!term || clip.text.toLocaleLowerCase().includes(term)),
     )
     .sort((a, b) => b.createdAt - a.createdAt)
 }

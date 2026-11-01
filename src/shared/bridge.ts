@@ -26,10 +26,9 @@ export interface DraftEdit {
   draft?: Draft
 }
 
-export interface DraftEditResult {
-  snapshot: Snapshot
-  accepted: boolean
-}
+export type DraftEditResult =
+  | { accepted: boolean; snapshot: Snapshot }
+  | { accepted: true; revision: number; draftWriteId: string }
 
 export interface DesktopBridge {
   editDraft(request: DraftEdit): Promise<DraftEditResult>

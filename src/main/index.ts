@@ -1,3 +1,4 @@
+import { draftEditSchema } from '../shared/draft-edit-schema'
 import {
   app,
   BrowserWindow,
@@ -19,13 +20,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { channels, type OpenRequest, type Snapshot } from '../shared/bridge'
-import {
-  backupSchema,
-  commandSchema,
-  exportBackup,
-  MAX_CLIP_LENGTH,
-  draftSchema,
-} from '../shared/library'
+import { backupSchema, commandSchema, exportBackup, MAX_CLIP_LENGTH } from '../shared/library'
 import { LibraryStore } from './store'
 import { dataDirectory, migrateCollection } from './data-directory'
 import { DraftQuitDrain } from './draft-quit-drain'
@@ -200,19 +195,15 @@ function installHandlers() {
     return snapshot()
   })
   handle(channels.editDraft, async (payload) => {
-    const request = z
-      .object({
-        id: z.string().min(1).max(100),
-        revision: z.number().int().nonnegative(),
-        action: z.enum(['update', 'save', 'discard']),
-        draft: draftSchema.optional(),
-      })
-      .parse(payload)
-    const result = await store.editDraft(request)
+    const request = draftEditSchema.parse(payload)
+    const result = await store.editDraft(request, true)
+    if (result.accepted && request.action === 'update') {
+      return { accepted: true, revision: result.revision, draftWriteId: result.draftWriteId }
+    }
     return {
       accepted: result.accepted,
       snapshot: {
-        library: result.library,
+        library: result.library!,
         revision: result.revision,
         draftWriteId: result.draftWriteId,
         shortcutError: shortcuts.shortcutError,
@@ -311,7 +302,6 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      backgroundThrottling: false,
     },
   })
   if (process.platform === 'darwin' && !app.isPackaged) {

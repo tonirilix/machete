@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import {
   applyCommand,
   createLibrary,
+  draftSchema,
   librarySchema,
   restoreBackup,
   type Command,
@@ -66,6 +67,10 @@ export class LibraryStore {
     return structuredClone(this.library)
   }
 
+  getShortcut(): string {
+    return this.library.settings.shortcut
+  }
+
   getDraftWriteId(): string | null {
     return this.draftWriteId
   }
@@ -74,8 +79,11 @@ export class LibraryStore {
     return this.revision
   }
 
-  editDraft(request: DraftEdit): Promise<{
-    library: Library
+  editDraft(
+    request: DraftEdit,
+    compact = false,
+  ): Promise<{
+    library?: Library
     revision: number
     accepted: boolean
     draftWriteId: string | null
@@ -95,13 +103,23 @@ export class LibraryStore {
           : request.action === 'save'
             ? { type: 'save-draft', ...request.draft! }
             : { type: 'update-draft', ...request.draft! }
-      const next = applyCommand(this.library, command)
+      let next: Library
+      if (request.action === 'update') {
+        const draft = draftSchema.parse(request.draft)
+        if (!this.library.draft) throw new Error('This draft has already been saved or discarded.')
+        if (!this.library.boards.some((board) => board.id === draft.boardId)) {
+          throw new Error('That board no longer exists.')
+        }
+        next = { ...this.library, draft }
+      } else {
+        next = applyCommand(this.library, command)
+      }
       await this.persist(next)
       this.library = next
       this.revision++
       this.draftWriteId = request.id
       return {
-        library: this.getState(),
+        library: compact && request.action === 'update' ? undefined : this.getState(),
         revision: this.revision,
         accepted: true,
         draftWriteId: this.draftWriteId,

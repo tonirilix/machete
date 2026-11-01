@@ -21,7 +21,7 @@ export class ShortcutController {
   private error: string | null = null
 
   constructor(
-    private readonly store: Pick<LibraryStore, 'getState' | 'execute'>,
+    private readonly store: Pick<LibraryStore, 'getShortcut' | 'execute'>,
     private readonly adapters: {
       electron: ShortcutRegistration
       doubleShift: ShortcutRegistration
@@ -75,7 +75,7 @@ export class ShortcutController {
 
   private restore(): void {
     if (this.stopped) return
-    const shortcut = this.store.getState().settings.shortcut
+    const shortcut = this.store.getShortcut()
     if (this.active?.shortcut === shortcut && this.registered(this.active)) {
       this.error = null
       return

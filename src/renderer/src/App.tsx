@@ -89,8 +89,11 @@ export function App() {
   )
   const [active, setActive] = useState('all')
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  useEffect(() => setPage(0), [active, query])
   const [selected, setSelected] = useState<string[]>([])
   const [anchor, setAnchor] = useState<string | null>(null)
+  const [revealRequest, setRevealRequest] = useState(0)
   const [settings, setSettings] = useState(false)
   const [boardPrompt, setBoardPrompt] = useState<{
     board?: Board
@@ -101,6 +104,7 @@ export function App() {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const search = useRef<HTMLInputElement>(null)
+  const revealAnchor = useRef<string | null>(null)
 
   useEffect(
     () =>
@@ -159,9 +163,21 @@ export function App() {
   const library = snapshot?.library
   const clips = useMemo(
     () => (library ? visibleClips(library, active, query) : []),
-    [library, active, query],
+    [library?.clips, active, query],
   )
-  const selectedVisible = selected.filter((id) => clips.some((clip) => clip.id === id))
+  const clipIds = useMemo(() => new Set(clips.map((clip) => clip.id)), [clips])
+  const selectedVisible = selected.filter((id) => clipIds.has(id))
+  const selectedSet = new Set(selectedVisible)
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(clips.length / 50) - 1))
+
+  useEffect(() => {
+    if (!revealAnchor.current) return
+    const card = document.querySelector(`[data-clip-id="${CSS.escape(revealAnchor.current)}"]`)
+    if (card) {
+      card.scrollIntoView({ block: 'nearest' })
+      revealAnchor.current = null
+    }
+  }, [anchor, currentPage, revealRequest])
 
   function navigate(id: string) {
     setActive(id)
@@ -299,11 +315,11 @@ export function App() {
           event.key === 'ArrowDown'
             ? Math.min(current + 1, clips.length - 1)
             : Math.max(current - 1, 0)
+        revealAnchor.current = clips[index].id
+        setRevealRequest((request) => request + 1)
+        setPage(Math.floor(index / 50))
         setSelected([clips[index].id])
         setAnchor(clips[index].id)
-        document
-          .querySelector(`[data-clip-id="${CSS.escape(clips[index].id)}"]`)
-          ?.scrollIntoView({ block: 'nearest' })
       }
       if (
         ['Backspace', 'Delete'].includes(event.key) &&
@@ -508,12 +524,12 @@ export function App() {
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6" aria-label="Saved clips">
                 {clips.length ? (
                   <div className="space-y-3">
-                    {clips.map((clip) => (
+                    {clips.slice(currentPage * 50, currentPage * 50 + 50).map((clip) => (
                       <ClipCard
                         key={clip.id}
                         clip={clip}
                         boards={state.boards}
-                        selected={selectedVisible.includes(clip.id)}
+                        selected={selectedSet.has(clip.id)}
                         onSelect={(event) => select(clip.id, event)}
                         onToggle={() => select(clip.id)}
                         onCopy={() => void copy([clip.id])}
@@ -529,6 +545,27 @@ export function App() {
                         }}
                       />
                     ))}
+                    {clips.length > 50 && (
+                      <div className="flex justify-center gap-4">
+                        <Button
+                          variant="outline"
+                          disabled={currentPage === 0}
+                          onClick={() => setPage(currentPage - 1)}
+                        >
+                          Previous
+                        </Button>
+                        <span>
+                          Page {currentPage + 1} of {Math.ceil(clips.length / 50)}
+                        </span>
+                        <Button
+                          variant="outline"
+                          disabled={(currentPage + 1) * 50 >= clips.length}
+                          onClick={() => setPage(currentPage + 1)}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex h-full min-h-64 flex-col items-center justify-center pb-10 text-center">

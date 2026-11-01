@@ -20,16 +20,21 @@ async function harness(
   })
   const calls: {
     request: DraftEdit
-    result?: DraftEditResult
+    result?: { accepted: boolean; snapshot: Snapshot }
     resolve: (result: DraftEditResult) => void
     reject: (error: Error) => void
   }[] = []
-  const editing = new DraftEditing({
-    editDraft: (request) =>
-      new Promise((resolve, reject) => {
-        calls.push({ request, resolve, reject })
-      }),
-  })
+  const published: Snapshot[] = []
+  const editing = new DraftEditing(
+    {
+      editDraft: (request) =>
+        new Promise((resolve, reject) => {
+          calls.push({ request, resolve, reject })
+        }),
+    },
+    (snapshot) => published.push(snapshot),
+    0,
+  )
   editing.receive(snapshot())
   async function commit(index: number, deliver = true) {
     const call = calls[index]
@@ -37,7 +42,7 @@ async function harness(
     call.result = {
       accepted: result.accepted,
       snapshot: {
-        library: result.library,
+        library: result.library!,
         revision: result.revision,
         draftWriteId: result.draftWriteId,
         shortcutError: null,
@@ -52,10 +57,65 @@ async function harness(
     await store.execute({ type: 'append-capture', text })
     editing.receive(snapshot())
   }
-  return { store, editing, calls, commit, append, snapshot }
+  return { store, editing, calls, commit, append, snapshot, published }
 }
 
 describe('DraftEditing', () => {
+  it('batches typing from the first change and flushes immediately on idle', async () => {
+    vi.useFakeTimers()
+    try {
+      const editDraft = vi.fn(async (request: DraftEdit) => ({
+        accepted: true as const,
+        revision: request.revision + 1,
+        draftWriteId: request.id,
+      }))
+      const editing = new DraftEditing({ editDraft })
+      const store = LibraryStore.inMemory()
+      await store.execute({ type: 'begin-capture', text: 'start' })
+      editing.receive({
+        library: store.getState(),
+        revision: store.getRevision(),
+        draftWriteId: null,
+        shortcutError: null,
+      })
+      editing.change({ text: 'one', boardId: 'inbox' })
+      await vi.advanceTimersByTimeAsync(90)
+      editing.change({ text: 'two', boardId: 'inbox' })
+      expect(editDraft).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(editDraft).toHaveBeenCalledOnce()
+      expect(editDraft.mock.calls[0][0].draft?.text).toBe('two')
+      editing.change({ text: 'three', boardId: 'inbox' })
+      await editing.whenIdle()
+      expect(editDraft).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a delayed compact acknowledgement after a newer board and clip snapshot', async () => {
+    const h = await harness()
+    h.editing.change({ text: 'typed', boardId: 'inbox' })
+    await h.commit(0, false)
+    await h.store.execute({ type: 'create-board', name: 'Later' })
+    await h.store.execute({ type: 'save-capture', text: 'later clip' })
+    const latest = h.snapshot()
+    h.editing.receive(latest)
+    const publicationsBeforeAck = h.published.length
+    h.calls[0].resolve({
+      accepted: true,
+      revision: h.calls[0].result!.snapshot.revision,
+      draftWriteId: h.calls[0].request.id,
+    })
+    await settle()
+    expect(h.editing.getState()).toMatchObject({ draft: { text: 'typed' }, error: null })
+    expect(h.published).toHaveLength(publicationsBeforeAck)
+    expect(h.published.at(-1)).toBe(latest)
+    expect(h.published.at(-1)?.revision).toBe(latest.revision)
+    expect(h.published.at(-1)?.library.clips[0].text).toBe('later clip')
+    expect(h.published.at(-1)?.library.boards[1].name).toBe('Later')
+  })
+
   it('keeps unsent typing when a quick capture advances the collection revision', async () => {
     const h = await harness()
     h.editing.change({ text: 'latest manual typing', boardId: 'inbox' })
@@ -395,7 +455,7 @@ it('uses conditional editing through the normal browser adapter and resumes pers
   const editing = new DraftEditing(bridge)
   editing.receive(await bridge.capture(false))
   editing.change({ text: 'browser typing', boardId: 'inbox' })
-  await settle()
+  await editing.whenIdle()
   editing.receive(await bridge.capture(true))
   expect(editing.getState().draft?.text).toBe('browser typing\n\nbrowser capture')
   const resumedBridge = createBrowserBridge()

@@ -45,6 +45,44 @@ describe('durable local collection', () => {
     expect(store.getState().boards.map((board) => board.name)).toEqual(['Inbox', 'Project'])
   })
 
+  it('publishes a conditional draft update only after persistence and preserves state on failure', async () => {
+    let release!: () => void
+    let reject!: (error: Error) => void
+    let defer = false
+    const store = LibraryStore.inMemory(async () => {
+      if (defer)
+        await new Promise<void>((resolve, fail) => {
+          release = resolve
+          reject = fail
+        })
+    })
+    await store.execute({ type: 'begin-capture', text: 'before' })
+    defer = true
+    const request = {
+      id: 'first',
+      revision: store.getRevision(),
+      action: 'update' as const,
+      draft: { text: 'after', boardId: 'inbox' },
+    }
+    const pending = store.editDraft(request)
+    await Promise.resolve()
+    expect(store.getState().draft?.text).toBe('before')
+    expect(store.getRevision()).toBe(request.revision)
+    release()
+    expect((await pending).accepted).toBe(true)
+    const failed = store.editDraft({
+      ...request,
+      id: 'second',
+      revision: store.getRevision(),
+      draft: { ...request.draft, text: 'failed' },
+    })
+    await Promise.resolve()
+    reject(new Error('Disk full'))
+    await expect(failed).rejects.toThrow('Disk full')
+    expect(store.getState().draft?.text).toBe('after')
+    expect(store.getDraftWriteId()).toBe('first')
+  })
+
   it('leaves an unreadable collection intact instead of starting an empty one', async () => {
     const file = join(directory, 'collection.json')
     await writeFile(file, '{interrupted or invalid file')
