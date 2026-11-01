@@ -14,6 +14,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { z } from 'zod'
@@ -26,6 +27,7 @@ import {
   draftSchema,
 } from '../shared/library'
 import { LibraryStore } from './store'
+import { dataDirectory, migrateCollection } from './data-directory'
 import { DraftQuitDrain } from './draft-quit-drain'
 import { CaptureController } from './capture'
 import { ShortcutController } from './shortcuts'
@@ -40,13 +42,9 @@ import {
 
 const directory = dirname(fileURLToPath(import.meta.url))
 app.setName('Machete')
-app.setPath(
-  'userData',
-  // Preserve the existing collection and the previous data-directory override.
-  process.env.MACHETE_DATA_DIR ||
-    process.env.CLIPTOBOARDS_DATA_DIR ||
-    join(app.getPath('appData'), 'Cliptoboards'),
-)
+const data = dataDirectory(app.getPath('appData'), process.env)
+mkdirSync(data.directory, { recursive: true, mode: 0o700 })
+app.setPath('userData', data.directory)
 protocol.registerSchemesAsPrivileged([
   { scheme: 'machete', privileges: { secure: true, standard: true, supportFetchAPI: true } },
 ])
@@ -347,6 +345,7 @@ function createWindow() {
 async function start() {
   await app.whenReady()
   if (quitPhase === 'quitting') return
+  await migrateCollection(data)
   store = await LibraryStore.open(join(app.getPath('userData'), 'collection.json'))
   if (quitPhase !== 'running') return
   captures = new CaptureController(

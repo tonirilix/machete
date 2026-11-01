@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -28,16 +28,32 @@ async function desktop({
   load = async () => {},
   permission = { granted: false },
   shortcut = DEFAULT_SHORTCUT,
+  legacy = false,
+  legacyContents = '',
+  danglingDestination = false,
   selection = async (): Promise<SelectionResult> => ({ status: 'captured', text: 'selected text' }),
 } = {}) {
   vi.resetModules()
   const directory = await mkdtemp(join(tmpdir(), 'machete-window-test-'))
   directories.push(directory)
-  vi.stubEnv('MACHETE_DATA_DIR', directory)
+  vi.stubEnv('MACHETE_DATA_DIR', legacy ? '' : directory)
+  vi.stubEnv('CLIPTOBOARDS_DATA_DIR', '')
+  const initialDirectory = legacy ? join(directory, 'Cliptoboards') : directory
+  await mkdir(initialDirectory, { recursive: true })
   await writeFile(
-    join(directory, 'collection.json'),
-    JSON.stringify({ ...createLibrary(), settings: { shortcut } }),
+    join(initialDirectory, 'collection.json'),
+    legacyContents ||
+      JSON.stringify({
+        ...createLibrary(),
+        settings: { shortcut },
+        draft: legacy ? { text: 'legacy draft', boardId: 'inbox' } : null,
+      }),
   )
+  if (danglingDestination) {
+    const destination = join(directory, 'com.tonirilix.machete')
+    await mkdir(destination)
+    await symlink('missing-target', join(destination, 'collection.json'))
+  }
   const windows: Window[] = []
   const trays: Tray[] = []
   const handlers = new Map<string, (event: object, payload: unknown) => Promise<unknown>>()
@@ -118,10 +134,13 @@ async function desktop({
       this.destroyed = true
     }
   }
+  let userData = directory
   const app = Object.assign(new EventEmitter(), {
     setName: vi.fn(),
-    setPath: vi.fn(),
-    getPath: () => directory,
+    setPath: vi.fn((name: string, path: string) => {
+      if (name === 'userData') userData = path
+    }),
+    getPath: (name: string) => (name === 'userData' ? userData : directory),
     requestSingleInstanceLock: () => true,
     whenReady: () => ready,
     isHidden: () => false,
@@ -189,6 +208,7 @@ async function desktop({
     return quit
   }
   return {
+    directory,
     app,
     windows,
     trays,
@@ -201,6 +221,53 @@ async function desktop({
     requestQuit,
   }
 }
+
+it('migrates the legacy collection before opening the namespaced desktop store', async () => {
+  const d = await desktop({ legacy: true })
+  const window = await d.loaded()
+  const destination = join(d.directory, 'com.tonirilix.machete')
+  expect(d.app.getPath('userData')).toBe(destination)
+  expect(await d.invoke(window, channels.state, undefined)).toEqual(
+    expect.objectContaining({
+      library: expect.objectContaining({ draft: { text: 'legacy draft', boardId: 'inbox' } }),
+    }),
+  )
+  expect(await readFile(join(destination, 'collection.json'))).toEqual(
+    await readFile(join(d.directory, 'Cliptoboards', 'collection.json')),
+  )
+})
+
+it('reports invalid legacy data and quits instead of opening an empty collection', async () => {
+  const d = await desktop({ legacy: true, legacyContents: '{invalid legacy JSON' })
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
+  expect(d.windows).toHaveLength(0)
+  expect(d.dialog.showErrorBox).toHaveBeenCalledWith(
+    'Machete',
+    expect.stringContaining('Could not migrate'),
+  )
+  expect(await readFile(join(d.directory, 'Cliptoboards', 'collection.json'), 'utf8')).toBe(
+    '{invalid legacy JSON',
+  )
+  await expect(
+    readFile(join(d.directory, 'com.tonirilix.machete', 'collection.json')),
+  ).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('reports a dangling destination link instead of opening an empty collection', async () => {
+  const d = await desktop({ legacy: true, danglingDestination: true })
+  await vi.waitFor(() => expect(d.app.quit).toHaveBeenCalledOnce())
+  expect(d.windows).toHaveLength(0)
+  expect(d.dialog.showErrorBox).toHaveBeenCalledWith(
+    'Machete',
+    expect.stringContaining('collection.json'),
+  )
+  expect(await readlink(join(d.directory, 'com.tonirilix.machete', 'collection.json'))).toBe(
+    'missing-target',
+  )
+  expect(await readFile(join(d.directory, 'Cliptoboards', 'collection.json'), 'utf8')).toContain(
+    'legacy draft',
+  )
+})
 
 it('handles Dock activation after the native window has been destroyed', async () => {
   const d = await desktop()
