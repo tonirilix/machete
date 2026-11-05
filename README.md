@@ -7,6 +7,8 @@ organize clips into boards; find and copy them when you need them again.
 
 Built for macOS with Electron, React, TypeScript, Tailwind CSS, and shadcn/ui.
 
+![Machete showing saved clips, search, and boards](docs/screenshots/machete.png)
+
 ## Download and install
 
 1. Open [GitHub Releases](https://github.com/tonirilix/machete/releases) and expand
